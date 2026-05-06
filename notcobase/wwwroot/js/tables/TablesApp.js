@@ -1,82 +1,15 @@
 const { useEffect, useMemo, useState } = React;
 const h = React.createElement;
-const API_ROOT = "/api";
-
-const FIELD_TYPES = ["text", "number", "date", "checkbox", "list"];
-
-async function api(path, options = {}) {
-  const response = await fetch(`${API_ROOT}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with status ${response.status}`);
-  }
-
-  if (response.status === 204) {
-    return null;
-  }
-
-  return response.json();
-}
-
-function emptyRecord(columns) {
-  return columns.reduce((values, column) => {
-    if (column.fieldType === "checkbox") {
-      values[column.name] = false;
-    } else if (column.fieldType === "list") {
-      values[column.name] = [""];
-    } else {
-      values[column.name] = "";
-    }
-
-    return values;
-  }, {});
-}
-
-function cleanListItems(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => String(item).trim())
-    .filter((item) => item.length > 0);
-}
-
-function coerceRecordValue(value, fieldType) {
-  if (fieldType === "number") {
-    return value === "" ? null : Number(value);
-  }
-
-  if (fieldType === "checkbox") {
-    return Boolean(value);
-  }
-
-  if (fieldType === "list") {
-    return cleanListItems(value);
-  }
-
-  return value;
-}
-
-function formatRecordValue(value, fieldType) {
-  if (fieldType === "checkbox") {
-    return value ? "Yes" : "No";
-  }
-
-  if (fieldType === "list") {
-    const items = cleanListItems(value);
-    return items.length > 0 ? items.join(", ") : "";
-  }
-
-  return String(value ?? "");
-}
+const {
+  api,
+  FIELD_TYPES,
+  Modal,
+  CellEditorPopup,
+  cleanListItems,
+  coerceRecordValue,
+  emptyRecord,
+  formatRecordValue,
+} = window.Notcobase;
 
 function TablesApp() {
   const [tables, setTables] = useState([]);
@@ -395,10 +328,10 @@ function TablesApp() {
 
     error && h("div", { className: "alert alert-danger" }, error),
 
-    h(
+    h( // main content
       "div",
       { className: "row g-4" },
-      h(
+      h( // tables list
         "aside",
         { className: "col-lg-3" },
         h(
@@ -408,7 +341,7 @@ function TablesApp() {
             ? h("div", { className: "list-group-item text-muted" }, "Loading tables...")
             : tables.length === 0
               ? h("div", { className: "list-group-item text-muted" }, "No tables yet")
-              : tables.map((table) =>
+              : tables.map((table) => // table list item
                   h(
                     "button",
                     {
@@ -442,13 +375,13 @@ function TablesApp() {
               { className: "border rounded bg-light p-5 text-center" },
               h("h2", { className: "h5" }, "Select or create a table"),
             )
-          : h(
+          : h( // table details
               "div",
               null,
               h(
                 "div",
                 { className: "d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3" },
-                h(
+                h( // table title and description
                   "div",
                   null,
                   h("h2", { className: "h4 mb-1" }, activeTable.name),
@@ -460,7 +393,7 @@ function TablesApp() {
                       `Inherits properties from ${activeTable.parentTableName || `table #${activeTable.parentTableId}`}`,
                     ),
                 ),
-                h(
+                h( // action buttons
                   "div",
                   { className: "d-flex gap-2" },
                   h(
@@ -493,10 +426,10 @@ function TablesApp() {
                     "div",
                     { className: "border rounded p-3 h-100" },
                     h("h3", { className: "h6 mb-3" }, "Fields"),
-                    h(
+                    h( // add column form
                       "form",
                       { className: "row g-2 mb-3", onSubmit: createColumn },
-                      h(
+                      h( // column name input
                         "div",
                         { className: "col-sm-5" },
                         h("input", {
@@ -506,7 +439,7 @@ function TablesApp() {
                           onChange: (event) => setFieldForm({ ...fieldForm, name: event.target.value }),
                         }),
                       ),
-                      h(
+                      h( // column type selector
                         "div",
                         { className: "col-sm-4" },
                         h(
@@ -519,12 +452,12 @@ function TablesApp() {
                           FIELD_TYPES.map((type) => h("option", { key: type, value: type }, type)),
                         ),
                       ),
-                      h(
+                      h( // required checkbox and add button
                         "div",
                         { className: "col-sm-3 d-grid" },
                         h("button", { className: "btn btn-sm btn-primary", disabled: saving }, "Add"),
                       ),
-                      h(
+                      h( // required checkbox
                         "label",
                         { className: "form-check ms-2 small" },
                         h("input", {
@@ -538,7 +471,7 @@ function TablesApp() {
                     ),
                     columns.length === 0
                       ? h("div", { className: "text-muted small" }, "Add fields before creating records.")
-                      : h(
+                      : h( // column list
                           "div",
                           { className: "d-flex flex-column gap-2" },
                           columns.map((column) =>
@@ -568,7 +501,7 @@ function TablesApp() {
                         ),
                   ),
                 ),
-                h(
+                h( // table stats
                   "div",
                   { className: "col-xl-7" },
                   h(
@@ -586,7 +519,7 @@ function TablesApp() {
                 ),
               ),
 
-              h(
+              h( // records table
                 "div",
                 { className: "table-responsive border rounded" },
                 columns.length === 0
@@ -604,7 +537,7 @@ function TablesApp() {
                           h("th", { className: "text-end", style: { width: 96 } }, "Actions"),
                         ),
                       ),
-                      h(
+                      h( // table body
                         "tbody",
                         null,
                         records.length === 0
@@ -652,6 +585,7 @@ function TablesApp() {
       ),
     ),
 
+    // create table modal
     showCreateTable &&
       h(
         Modal,
@@ -737,6 +671,7 @@ function TablesApp() {
         ),
       ),
 
+    // create record modal
     showCreateRecord &&
       h(
         Modal,
@@ -820,6 +755,7 @@ function TablesApp() {
         ),
       ),
 
+    // cell editor popup
     cellEditor &&
       h(CellEditorPopup, {
         editor: cellEditor,
@@ -834,129 +770,4 @@ function TablesApp() {
   );
 }
 
-function Modal({ title, onClose, children }) {
-  return h(
-    "div",
-    {
-      className: "modal show d-block",
-      tabIndex: "-1",
-      style: { backgroundColor: "rgba(0,0,0,0.5)" },
-    },
-    h(
-      "div",
-      { className: "modal-dialog" },
-      h(
-        "div",
-        { className: "modal-content" },
-        h(
-          "div",
-          { className: "modal-header" },
-          h("h5", { className: "modal-title" }, title),
-          h("button", { type: "button", className: "btn-close", onClick: onClose }),
-        ),
-        children,
-      ),
-    ),
-  );
-}
-
-function CellEditorPopup({
-  editor,
-  saving,
-  onValueChange,
-  onListItemChange,
-  onListItemRemove,
-  onNewItemChange,
-  onSave,
-  onCancel,
-}) {
-  const inputType = editor.fieldType === "number" ? "number" : editor.fieldType === "date" ? "date" : "text";
-
-  return h(
-    "div",
-    {
-      className: "position-fixed bg-white border rounded shadow p-3",
-      style: {
-        left: editor.position?.left ?? 12,
-        top: editor.position?.top ?? 12,
-        width: 320,
-        maxWidth: "75vw",
-        maxHeight: "70vh",
-        overflowY: "auto",
-        zIndex: 1080,
-      },
-      onClick: (event) => event.stopPropagation(),
-    },
-    h(
-      "div",
-      { className: "small fw-semibold mb-2" },
-      editor.fieldType === "list" ? "Edit list items" : "Edit value",
-    ),
-    editor.fieldType === "checkbox"
-      ? h(
-          "div",
-          { className: "form-check mb-3" },
-          h("input", {
-            id: `cell-${editor.recordId}-${editor.columnName}`,
-            className: "form-check-input",
-            type: "checkbox",
-            checked: Boolean(editor.value),
-            onChange: (event) => onValueChange(event.target.checked),
-          }),
-          h(
-            "label",
-            { className: "form-check-label", htmlFor: `cell-${editor.recordId}-${editor.columnName}` },
-            "Checked",
-          ),
-        )
-      : editor.fieldType === "list"
-        ? h(
-            "div",
-            null,
-            (Array.isArray(editor.value) && editor.value.length > 0 ? editor.value : [""]).map((item, itemIndex) =>
-              h(
-                "div",
-                { className: "input-group input-group-sm mb-2", key: itemIndex },
-                h("input", {
-                  className: "form-control",
-                  value: item,
-                  placeholder: `Item ${itemIndex + 1}`,
-                  onChange: (event) => onListItemChange(itemIndex, event.target.value),
-                }),
-                h(
-                  "button",
-                  {
-                    type: "button",
-                    className: "btn btn-outline-danger",
-                    onClick: () => onListItemRemove(itemIndex),
-                  },
-                  "Remove",
-                ),
-              ),
-            ),
-            h("input", {
-              className: "form-control form-control-sm mb-3",
-              value: editor.newItem,
-              placeholder: "New item",
-              onChange: (event) => onNewItemChange(event.target.value),
-            }),
-          )
-        : h("input", {
-            className: "form-control form-control-sm mb-3",
-            autoFocus: true,
-            type: inputType,
-            required: editor.isRequired,
-            value: editor.value,
-            onChange: (event) => onValueChange(event.target.value),
-          }),
-    h(
-      "div",
-      { className: "d-flex justify-content-end gap-2" },
-      h("button", { type: "button", className: "btn btn-sm btn-outline-secondary", onClick: onCancel }, "Cancel"),
-      h("button", { type: "button", className: "btn btn-sm btn-primary", disabled: saving, onClick: onSave }, saving ? "Saving..." : "Save"),
-    ),
-  );
-}
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(h(TablesApp));
+window.Notcobase.TablesApp = TablesApp;
