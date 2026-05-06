@@ -2,7 +2,7 @@ const { useEffect, useMemo, useState } = React;
 const h = React.createElement;
 const API_ROOT = "/api";
 
-const FIELD_TYPES = ["text", "number", "date", "checkbox"];
+const FIELD_TYPES = ["text", "number", "date", "checkbox", "list"];
 
 async function api(path, options = {}) {
   const response = await fetch(`${API_ROOT}${path}`, {
@@ -27,9 +27,26 @@ async function api(path, options = {}) {
 
 function emptyRecord(columns) {
   return columns.reduce((values, column) => {
-    values[column.name] = column.fieldType === "checkbox" ? false : "";
+    if (column.fieldType === "checkbox") {
+      values[column.name] = false;
+    } else if (column.fieldType === "list") {
+      values[column.name] = [""];
+    } else {
+      values[column.name] = "";
+    }
+
     return values;
   }, {});
+}
+
+function cleanListItems(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => String(item).trim())
+    .filter((item) => item.length > 0);
 }
 
 function coerceRecordValue(value, fieldType) {
@@ -41,7 +58,24 @@ function coerceRecordValue(value, fieldType) {
     return Boolean(value);
   }
 
+  if (fieldType === "list") {
+    return cleanListItems(value);
+  }
+
   return value;
+}
+
+function formatRecordValue(value, fieldType) {
+  if (fieldType === "checkbox") {
+    return value ? "Yes" : "No";
+  }
+
+  if (fieldType === "list") {
+    const items = cleanListItems(value);
+    return items.length > 0 ? items.join(", ") : "";
+  }
+
+  return String(value ?? "");
 }
 
 function TablesApp() {
@@ -233,6 +267,23 @@ function TablesApp() {
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const setListItem = (columnName, itemIndex, value) => {
+    const items = Array.isArray(recordForm[columnName]) ? [...recordForm[columnName]] : [""];
+    items[itemIndex] = value;
+    setRecordForm({ ...recordForm, [columnName]: items });
+  };
+
+  const addListItem = (columnName) => {
+    const items = Array.isArray(recordForm[columnName]) ? recordForm[columnName] : [];
+    setRecordForm({ ...recordForm, [columnName]: [...items, ""] });
+  };
+
+  const removeListItem = (columnName, itemIndex) => {
+    const items = Array.isArray(recordForm[columnName]) ? [...recordForm[columnName]] : [""];
+    const nextItems = items.filter((_, index) => index !== itemIndex);
+    setRecordForm({ ...recordForm, [columnName]: nextItems.length > 0 ? nextItems : [""] });
   };
 
   const activeTable = useMemo(
@@ -480,15 +531,7 @@ function TablesApp() {
                                 "tr",
                                 { key: record.id },
                                 columns.map((column) =>
-                                  h(
-                                    "td",
-                                    { key: column.id },
-                                    column.fieldType === "checkbox"
-                                      ? record.data?.[column.name]
-                                        ? "Yes"
-                                        : "No"
-                                      : String(record.data?.[column.name] ?? ""),
-                                  ),
+                                  h("td", { key: column.id }, formatRecordValue(record.data?.[column.name], column.fieldType)),
                                 ),
                                 h(
                                   "td",
@@ -623,6 +666,43 @@ function TablesApp() {
                       }),
                       h("label", { className: "form-check-label" }, "Checked"),
                     )
+                  : column.fieldType === "list"
+                    ? h(
+                        "div",
+                        null,
+                        (Array.isArray(recordForm[column.name]) ? recordForm[column.name] : [""]).map((item, itemIndex) =>
+                          h(
+                            "div",
+                            { className: "input-group mb-2", key: itemIndex },
+                            h("input", {
+                              className: "form-control",
+                              required: column.isRequired && itemIndex === 0,
+                              value: item,
+                              placeholder: `Item ${itemIndex + 1}`,
+                              onChange: (event) => setListItem(column.name, itemIndex, event.target.value),
+                            }),
+                            h(
+                              "button",
+                              {
+                                type: "button",
+                                className: "btn btn-outline-danger",
+                                disabled: (recordForm[column.name] || [""]).length === 1,
+                                onClick: () => removeListItem(column.name, itemIndex),
+                              },
+                              "Remove",
+                            ),
+                          ),
+                        ),
+                        h(
+                          "button",
+                          {
+                            type: "button",
+                            className: "btn btn-sm btn-outline-primary",
+                            onClick: () => addListItem(column.name),
+                          },
+                          "Add item",
+                        ),
+                      )
                   : h("input", {
                       className: "form-control",
                       type: column.fieldType === "number" ? "number" : column.fieldType === "date" ? "date" : "text",
