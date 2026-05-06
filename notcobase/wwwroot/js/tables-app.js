@@ -95,6 +95,7 @@ function TablesApp() {
     isRequired: false,
   });
   const [recordForm, setRecordForm] = useState({});
+  const [cellEditor, setCellEditor] = useState(null);
   const [showCreateTable, setShowCreateTable] = useState(false);
   const [showCreateRecord, setShowCreateRecord] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -266,6 +267,88 @@ function TablesApp() {
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const getEditorPosition = (target) => {
+    const rect = target.getBoundingClientRect();
+    const popupWidth = 320;
+    const margin = 12;
+    const left = Math.min(
+      Math.max(rect.left, margin),
+      Math.max(window.innerWidth - popupWidth - margin, margin),
+    );
+    const top = rect.bottom + margin > window.innerHeight - 120
+      ? Math.max(rect.top - margin, margin)
+      : rect.bottom + 6;
+
+    return { left, top };
+  };
+
+  const openCellEditor = (event, record, column) => {
+    const currentValue = record.data?.[column.name];
+    setCellEditor({
+      recordId: record.id,
+      columnName: column.name,
+      fieldType: column.fieldType,
+      isRequired: column.isRequired,
+      value: column.fieldType === "list" ? [...cleanListItems(currentValue)] : (currentValue ?? ""),
+      newItem: "",
+      position: getEditorPosition(event.currentTarget),
+    });
+  };
+
+  const updateCellEditorValue = (value) => {
+    setCellEditor((editor) => (editor ? { ...editor, value } : editor));
+  };
+
+  const updateCellEditorListItem = (itemIndex, value) => {
+    setCellEditor((editor) => {
+      if (!editor || !Array.isArray(editor.value)) return editor;
+
+      const items = [...editor.value];
+      items[itemIndex] = value;
+      return { ...editor, value: items };
+    });
+  };
+
+  const removeCellEditorListItem = (itemIndex) => {
+    setCellEditor((editor) => {
+      if (!editor || !Array.isArray(editor.value)) return editor;
+
+      const items = editor.value.filter((_, index) => index !== itemIndex);
+      return { ...editor, value: items };
+    });
+  };
+
+  const saveCellEditor = async () => {
+    if (!cellEditor || !selectedTableId) return;
+
+    const record = records.find((item) => item.id === cellEditor.recordId);
+    if (!record) return;
+
+    const data = { ...(record.data || {}) };
+    if (cellEditor.fieldType === "list") {
+      data[cellEditor.columnName] = cleanListItems([
+        ...(Array.isArray(cellEditor.value) ? cellEditor.value : []),
+        cellEditor.newItem,
+      ]);
+    } else {
+      data[cellEditor.columnName] = coerceRecordValue(cellEditor.value, cellEditor.fieldType);
+    }
+
+    try {
+      setSaving(true);
+      await api(`/tables/${selectedTableId}/records/${record.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ data }),
+      });
+      setCellEditor(null);
+      await refreshSelectedTable();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -531,7 +614,22 @@ function TablesApp() {
                                 "tr",
                                 { key: record.id },
                                 columns.map((column) =>
-                                  h("td", { key: column.id }, formatRecordValue(record.data?.[column.name], column.fieldType)),
+                                  h(
+                                    "td",
+                                    {
+                                      key: column.id,
+                                      style: { minWidth: 160 },
+                                    },
+                                    h(
+                                      "button",
+                                      {
+                                        type: "button",
+                                        className: "btn btn-link text-start text-decoration-none p-0 w-100",
+                                        onClick: (event) => openCellEditor(event, record, column),
+                                      },
+                                      formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),
+                                    ),
+                                  ),
                                 ),
                                 h(
                                   "td",
@@ -721,6 +819,18 @@ function TablesApp() {
           ),
         ),
       ),
+
+    cellEditor &&
+      h(CellEditorPopup, {
+        editor: cellEditor,
+        saving,
+        onValueChange: updateCellEditorValue,
+        onListItemChange: updateCellEditorListItem,
+        onListItemRemove: removeCellEditorListItem,
+        onNewItemChange: (value) => setCellEditor({ ...cellEditor, newItem: value }),
+        onSave: saveCellEditor,
+        onCancel: () => setCellEditor(null),
+      }),
   );
 }
 
@@ -746,6 +856,104 @@ function Modal({ title, onClose, children }) {
         ),
         children,
       ),
+    ),
+  );
+}
+
+function CellEditorPopup({
+  editor,
+  saving,
+  onValueChange,
+  onListItemChange,
+  onListItemRemove,
+  onNewItemChange,
+  onSave,
+  onCancel,
+}) {
+  const inputType = editor.fieldType === "number" ? "number" : editor.fieldType === "date" ? "date" : "text";
+
+  return h(
+    "div",
+    {
+      className: "position-fixed bg-white border rounded shadow p-3",
+      style: {
+        left: editor.position?.left ?? 12,
+        top: editor.position?.top ?? 12,
+        width: 320,
+        maxWidth: "75vw",
+        maxHeight: "70vh",
+        overflowY: "auto",
+        zIndex: 1080,
+      },
+      onClick: (event) => event.stopPropagation(),
+    },
+    h(
+      "div",
+      { className: "small fw-semibold mb-2" },
+      editor.fieldType === "list" ? "Edit list items" : "Edit value",
+    ),
+    editor.fieldType === "checkbox"
+      ? h(
+          "div",
+          { className: "form-check mb-3" },
+          h("input", {
+            id: `cell-${editor.recordId}-${editor.columnName}`,
+            className: "form-check-input",
+            type: "checkbox",
+            checked: Boolean(editor.value),
+            onChange: (event) => onValueChange(event.target.checked),
+          }),
+          h(
+            "label",
+            { className: "form-check-label", htmlFor: `cell-${editor.recordId}-${editor.columnName}` },
+            "Checked",
+          ),
+        )
+      : editor.fieldType === "list"
+        ? h(
+            "div",
+            null,
+            (Array.isArray(editor.value) && editor.value.length > 0 ? editor.value : [""]).map((item, itemIndex) =>
+              h(
+                "div",
+                { className: "input-group input-group-sm mb-2", key: itemIndex },
+                h("input", {
+                  className: "form-control",
+                  value: item,
+                  placeholder: `Item ${itemIndex + 1}`,
+                  onChange: (event) => onListItemChange(itemIndex, event.target.value),
+                }),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: "btn btn-outline-danger",
+                    onClick: () => onListItemRemove(itemIndex),
+                  },
+                  "Remove",
+                ),
+              ),
+            ),
+            h("input", {
+              className: "form-control form-control-sm mb-3",
+              value: editor.newItem,
+              placeholder: "New item",
+              onChange: (event) => onNewItemChange(event.target.value),
+            }),
+          )
+        : h("input", {
+            className: "form-control form-control-sm mb-3",
+            autoFocus: true,
+            type: inputType,
+            required: editor.isRequired,
+            value: editor.value,
+            onChange: (event) => onValueChange(event.target.value),
+          }),
+    h(
+      "div",
+      { className: "d-flex justify-content-end gap-2" },
+      h("button", { type: "button", className: "btn btn-sm btn-outline-secondary", onClick: onCancel }, "Cancel"),
+      h("button", { type: "button", className: "btn btn-sm btn-primary", disabled: saving, onClick: onSave }, saving ? "Saving..." : "Save"),
     ),
   );
 }
