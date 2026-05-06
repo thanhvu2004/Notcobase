@@ -22,12 +22,14 @@ public class TablesController : ControllerBase
     {
         var tables = await _context.Tables
             .Include(t => t.Columns)
+            .Include(t => t.Records)
             .Select(t => new TableDto
             {
                 Id = t.Id,
                 Name = t.Name,
                 Description = t.Description,
                 ColumnCount = t.Columns.Count,
+                RecordCount = t.Records.Count,
                 CreatedAt = t.CreatedAt,
                 UpdatedAt = t.UpdatedAt
             })
@@ -85,6 +87,7 @@ public class TablesController : ControllerBase
             Name = table.Name,
             Description = table.Description,
             ColumnCount = 0,
+            RecordCount = 0,
             CreatedAt = table.CreatedAt,
             UpdatedAt = table.UpdatedAt
         });
@@ -133,6 +136,7 @@ public class TableDto
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int ColumnCount { get; set; }
+    public int RecordCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
