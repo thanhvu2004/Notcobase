@@ -49,7 +49,12 @@ function TablesApp() {
   const [selectedTable, setSelectedTable] = useState(null);
   const [columns, setColumns] = useState([]);
   const [records, setRecords] = useState([]);
-  const [tableForm, setTableForm] = useState({ name: "", description: "" });
+  const [tableForm, setTableForm] = useState({
+    name: "",
+    description: "",
+    inheritProperties: false,
+    parentTableId: "",
+  });
   const [fieldForm, setFieldForm] = useState({
     name: "",
     fieldType: "text",
@@ -63,6 +68,7 @@ function TablesApp() {
   const [error, setError] = useState(null);
 
   const selectedTableId = selectedTable?.id;
+  const parentTableOptions = tables;
 
   useEffect(() => {
     fetchTables();
@@ -120,11 +126,23 @@ function TablesApp() {
 
     try {
       setSaving(true);
+      const payload = {
+        name: tableForm.name.trim(),
+        description: tableForm.description,
+        inheritProperties: tableForm.inheritProperties,
+        parentTableId: tableForm.inheritProperties ? Number(tableForm.parentTableId) : null,
+      };
+
       const table = await api("/tables", {
         method: "POST",
-        body: JSON.stringify(tableForm),
+        body: JSON.stringify(payload),
       });
-      setTableForm({ name: "", description: "" });
+      setTableForm({
+        name: "",
+        description: "",
+        inheritProperties: false,
+        parentTableId: "",
+      });
       setShowCreateTable(false);
       await fetchTables();
       await fetchTableDetails(table);
@@ -270,6 +288,12 @@ function TablesApp() {
                       { className: selectedTableId === table.id ? "text-white-50" : "text-muted" },
                       `${table.columnCount || 0} fields, ${table.recordCount || 0} records`,
                     ),
+                    table.inheritProperties &&
+                      h(
+                        "small",
+                        { className: selectedTableId === table.id ? "d-block text-white-50" : "d-block text-muted" },
+                        `inherits from ${table.parentTableName || `table #${table.parentTableId}`}`,
+                      ),
                   ),
                 ),
         ),
@@ -295,6 +319,12 @@ function TablesApp() {
                   null,
                   h("h2", { className: "h4 mb-1" }, activeTable.name),
                   h("p", { className: "text-muted mb-0" }, activeTable.description || "No description"),
+                  activeTable.inheritProperties &&
+                    h(
+                      "div",
+                      { className: "small text-muted mt-1" },
+                      `Inherits properties from ${activeTable.parentTableName || `table #${activeTable.parentTableId}`}`,
+                    ),
                 ),
                 h(
                   "div",
@@ -387,11 +417,14 @@ function TablesApp() {
                                 h("span", { className: "fw-semibold" }, column.name),
                                 h("span", { className: "badge text-bg-light ms-2" }, column.fieldType),
                                 column.isRequired && h("span", { className: "badge text-bg-warning ms-2" }, "required"),
+                                column.isInherited && h("span", { className: "badge text-bg-info ms-2" }, "inherited"),
                               ),
                               h(
                                 "button",
                                 {
                                   className: "btn btn-sm btn-outline-danger",
+                                  disabled: column.isInherited,
+                                  title: column.isInherited ? "Inherited fields must be changed on the parent table" : "Delete field",
                                   onClick: () => deleteColumn(column),
                                 },
                                 "Delete",
@@ -498,17 +531,67 @@ function TablesApp() {
             }),
             h("label", { className: "form-label" }, "Description"),
             h("textarea", {
-              className: "form-control",
+              className: "form-control mb-3",
               rows: 3,
               value: tableForm.description,
               onChange: (event) => setTableForm({ ...tableForm, description: event.target.value }),
             }),
+            h(
+              "div",
+              { className: "form-check mb-3" },
+              h("input", {
+                id: "inheritProperties",
+                className: "form-check-input",
+                type: "checkbox",
+                checked: tableForm.inheritProperties,
+                disabled: parentTableOptions.length === 0,
+                onChange: (event) =>
+                  setTableForm({
+                    ...tableForm,
+                    inheritProperties: event.target.checked,
+                    parentTableId: event.target.checked ? tableForm.parentTableId : "",
+                  }),
+              }),
+              h("label", { className: "form-check-label", htmlFor: "inheritProperties" }, "Inherit properties from another table"),
+            ),
+            tableForm.inheritProperties &&
+              h(
+                "div",
+                { className: "mb-1" },
+                h("label", { className: "form-label" }, "Parent table"),
+                h(
+                  "select",
+                  {
+                    className: "form-select",
+                    required: true,
+                    value: tableForm.parentTableId,
+                    onChange: (event) => setTableForm({ ...tableForm, parentTableId: event.target.value }),
+                  },
+                  h("option", { value: "" }, "Select parent table"),
+                  parentTableOptions.map((table) =>
+                    h(
+                      "option",
+                      { key: table.id, value: table.id },
+                      `${table.name} (${table.columnCount || 0} fields)`,
+                    ),
+                  ),
+                ),
+              ),
+            parentTableOptions.length === 0 &&
+              h("div", { className: "form-text" }, "Create one table first before enabling inherited properties."),
           ),
           h(
             "div",
             { className: "modal-footer" },
             h("button", { type: "button", className: "btn btn-secondary", onClick: () => setShowCreateTable(false) }, "Cancel"),
-            h("button", { className: "btn btn-primary", disabled: saving }, saving ? "Creating..." : "Create"),
+            h(
+              "button",
+              {
+                className: "btn btn-primary",
+                disabled: saving || (tableForm.inheritProperties && !tableForm.parentTableId),
+              },
+              saving ? "Creating..." : "Create",
+            ),
           ),
         ),
       ),
