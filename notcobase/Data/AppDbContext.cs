@@ -19,6 +19,12 @@ public class AppDbContext : DbContext
 
         // Configure Table entity
         modelBuilder.Entity<Table>()
+            .HasOne(t => t.ParentTable)
+            .WithMany(t => t.ChildTables)
+            .HasForeignKey(t => t.ParentTableId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Table>()
             .HasMany(t => t.Records)
             .WithOne(r => r.Table)
             .HasForeignKey(r => r.TableId)

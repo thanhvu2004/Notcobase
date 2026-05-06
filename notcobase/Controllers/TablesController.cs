@@ -23,19 +23,27 @@ public class TablesController : ControllerBase
         var tables = await _context.Tables
             .Include(t => t.Columns)
             .Include(t => t.Records)
-            .Select(t => new TableDto
+            .Include(t => t.ParentTable)
+            .AsNoTracking()
+            .ToListAsync();
+
+        var tableMap = tables.ToDictionary(t => t.Id);
+        var dtos = tables.Select(t => new TableDto
             {
                 Id = t.Id,
                 Name = t.Name,
                 Description = t.Description,
-                ColumnCount = t.Columns.Count,
+                InheritProperties = t.InheritProperties,
+                ParentTableId = t.ParentTableId,
+                ParentTableName = t.ParentTable?.Name,
+                ColumnCount = GetEffectiveColumns(t, tableMap).Count,
                 RecordCount = t.Records.Count,
                 CreatedAt = t.CreatedAt,
                 UpdatedAt = t.UpdatedAt
             })
-            .ToListAsync();
+            .ToList();
 
-        return Ok(tables);
+        return Ok(dtos);
     }
 
     /// Get a specific table by ID
@@ -45,22 +53,33 @@ public class TablesController : ControllerBase
         var table = await _context.Tables
             .Include(t => t.Columns)
             .Include(t => t.Records)
+            .Include(t => t.ParentTable)
             .FirstOrDefaultAsync(t => t.Id == id);
 
         if (table == null)
             return NotFound();
+
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.Id);
 
         var dto = new TableDetailsDto
         {
             Id = table.Id,
             Name = table.Name,
             Description = table.Description,
-            Columns = table.Columns.Select(c => new ColumnDto
+            InheritProperties = table.InheritProperties,
+            ParentTableId = table.ParentTableId,
+            ParentTableName = table.ParentTable?.Name,
+            Columns = GetEffectiveColumns(table, tableMap).Select(c => new ColumnDto
             {
                 Id = c.Id,
                 Name = c.Name,
                 FieldType = c.FieldType,
-                IsRequired = c.IsRequired
+                IsRequired = c.IsRequired,
+                TableId = c.TableId,
+                IsInherited = c.TableId != table.Id
             }).ToList(),
             RecordCount = table.Records.Count,
             CreatedAt = table.CreatedAt,
@@ -77,16 +96,46 @@ public class TablesController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Name))
             return BadRequest("Table name is required");
 
-        var table = new Table { Name = dto.Name, Description = dto.Description };
+        if (dto.InheritProperties && !dto.ParentTableId.HasValue)
+            return BadRequest("Parent table is required when inheritance is enabled");
+
+        if (dto.ParentTableId.HasValue && !await _context.Tables.AnyAsync(t => t.Id == dto.ParentTableId.Value))
+            return BadRequest("Parent table not found");
+
+        var table = new Table
+        {
+            Name = dto.Name,
+            Description = dto.Description,
+            InheritProperties = dto.InheritProperties,
+            ParentTableId = dto.InheritProperties ? dto.ParentTableId : null
+        };
+
         _context.Tables.Add(table);
         await _context.SaveChangesAsync();
+
+        var parentTableName = table.ParentTableId.HasValue
+            ? await _context.Tables
+                .Where(t => t.Id == table.ParentTableId.Value)
+                .Select(t => t.Name)
+                .FirstOrDefaultAsync()
+            : null;
+
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.Id);
 
         return CreatedAtAction(nameof(GetTable), new { id = table.Id }, new TableDto
         {
             Id = table.Id,
             Name = table.Name,
             Description = table.Description,
-            ColumnCount = 0,
+            InheritProperties = table.InheritProperties,
+            ParentTableId = table.ParentTableId,
+            ParentTableName = parentTableName,
+            ColumnCount = tableMap.TryGetValue(table.Id, out var savedTable)
+                ? GetEffectiveColumns(savedTable, tableMap).Count
+                : 0,
             RecordCount = 0,
             CreatedAt = table.CreatedAt,
             UpdatedAt = table.UpdatedAt
@@ -107,6 +156,27 @@ public class TablesController : ControllerBase
         if (dto.Description != null)
             table.Description = dto.Description;
 
+        if (dto.InheritProperties.HasValue)
+            table.InheritProperties = dto.InheritProperties.Value;
+
+        if (dto.ParentTableId.HasValue)
+        {
+            if (dto.ParentTableId.Value == id)
+                return BadRequest("A table cannot inherit from itself");
+
+            if (!await _context.Tables.AnyAsync(t => t.Id == dto.ParentTableId.Value))
+                return BadRequest("Parent table not found");
+
+            if (await WouldCreateInheritanceCycle(id, dto.ParentTableId.Value))
+                return BadRequest("This parent table would create an inheritance cycle");
+
+            table.ParentTableId = dto.ParentTableId.Value;
+            table.InheritProperties = true;
+        }
+
+        if (!table.InheritProperties)
+            table.ParentTableId = null;
+
         table.UpdatedAt = DateTime.UtcNow;
         _context.Tables.Update(table);
         await _context.SaveChangesAsync();
@@ -122,10 +192,67 @@ public class TablesController : ControllerBase
         if (table == null)
             return NotFound();
 
+        if (await _context.Tables.AnyAsync(t => t.ParentTableId == id))
+            return BadRequest("Cannot delete a table while other tables inherit from it");
+
         _context.Tables.Remove(table);
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private static List<Column> GetEffectiveColumns(Table table, IReadOnlyDictionary<int, Table> tableMap)
+    {
+        var columns = new List<Column>();
+        AddEffectiveColumns(table, tableMap, columns, new HashSet<int>());
+
+        return columns
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .OrderBy(c => c.TableId == table.Id ? 1 : 0)
+            .ThenBy(c => c.Id)
+            .ToList();
+    }
+
+    private static void AddEffectiveColumns(
+        Table table,
+        IReadOnlyDictionary<int, Table> tableMap,
+        List<Column> columns,
+        HashSet<int> visitedTableIds)
+    {
+        if (!visitedTableIds.Add(table.Id))
+            return;
+
+        if (table.InheritProperties &&
+            table.ParentTableId.HasValue &&
+            tableMap.TryGetValue(table.ParentTableId.Value, out var parentTable))
+        {
+            AddEffectiveColumns(parentTable, tableMap, columns, visitedTableIds);
+        }
+
+        columns.AddRange(table.Columns);
+    }
+
+    private async Task<bool> WouldCreateInheritanceCycle(int tableId, int parentTableId)
+    {
+        var tables = await _context.Tables
+            .AsNoTracking()
+            .Select(t => new { t.Id, t.ParentTableId })
+            .ToDictionaryAsync(t => t.Id);
+
+        var currentParentId = parentTableId;
+        while (tables.TryGetValue(currentParentId, out var current))
+        {
+            if (current.Id == tableId)
+                return true;
+
+            if (!current.ParentTableId.HasValue)
+                return false;
+
+            currentParentId = current.ParentTableId.Value;
+        }
+
+        return false;
     }
 }
 
@@ -135,6 +262,9 @@ public class TableDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public bool InheritProperties { get; set; }
+    public int? ParentTableId { get; set; }
+    public string? ParentTableName { get; set; }
     public int ColumnCount { get; set; }
     public int RecordCount { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -146,6 +276,9 @@ public class TableDetailsDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public bool InheritProperties { get; set; }
+    public int? ParentTableId { get; set; }
+    public string? ParentTableName { get; set; }
     public List<ColumnDto> Columns { get; set; } = new();
     public int RecordCount { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -156,12 +289,16 @@ public class CreateTableDto
 {
     public required string Name { get; set; }
     public string? Description { get; set; }
+    public bool InheritProperties { get; set; }
+    public int? ParentTableId { get; set; }
 }
 
 public class UpdateTableDto
 {
     public string? Name { get; set; }
     public string? Description { get; set; }
+    public bool? InheritProperties { get; set; }
+    public int? ParentTableId { get; set; }
 }
 
 public class ColumnDto
@@ -170,4 +307,6 @@ public class ColumnDto
     public string Name { get; set; } = string.Empty;
     public string FieldType { get; set; } = string.Empty;
     public bool IsRequired { get; set; }
+    public int TableId { get; set; }
+    public bool IsInherited { get; set; }
 }

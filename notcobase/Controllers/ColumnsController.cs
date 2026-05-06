@@ -20,18 +20,31 @@ public class ColumnsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ColumnResponseDto>>> GetColumns(int tableId)
     {
-        var columns = await _context.Columns
-            .Where(c => c.TableId == tableId)
-            .OrderBy(c => c.Id)
+        var table = await _context.Tables
+            .Include(t => t.Columns)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tableId);
+
+        if (table == null)
+            return NotFound("Table not found");
+
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.Id);
+
+        var columns = GetEffectiveColumns(table, tableMap)
             .Select(c => new ColumnResponseDto
             {
                 Id = c.Id,
                 Name = c.Name,
                 FieldType = c.FieldType,
                 IsRequired = c.IsRequired,
+                TableId = c.TableId,
+                IsInherited = c.TableId != tableId,
                 CreatedAt = c.CreatedAt
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(columns);
     }
@@ -41,7 +54,10 @@ public class ColumnsController : ControllerBase
     public async Task<ActionResult<ColumnResponseDto>> CreateColumn(int tableId, [FromBody] CreateColumnDto dto)
     {
         // Verify table exists
-        var table = await _context.Tables.FindAsync(tableId);
+        var table = await _context.Tables
+            .Include(t => t.Columns)
+            .FirstOrDefaultAsync(t => t.Id == tableId);
+
         if (table == null)
             return NotFound("Table not found");
 
@@ -50,6 +66,17 @@ public class ColumnsController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(dto.FieldType))
             return BadRequest("Field type is required");
+
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.Id);
+
+        if (GetEffectiveColumns(table, tableMap)
+            .Any(c => string.Equals(c.Name, dto.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return BadRequest("A column with this name already exists on this table or an inherited parent table");
+        }
 
         var column = new Column
         {
@@ -68,6 +95,8 @@ public class ColumnsController : ControllerBase
             Name = column.Name,
             FieldType = column.FieldType,
             IsRequired = column.IsRequired,
+            TableId = column.TableId,
+            IsInherited = false,
             CreatedAt = column.CreatedAt
         });
     }
@@ -83,7 +112,29 @@ public class ColumnsController : ControllerBase
             return NotFound();
 
         if (!string.IsNullOrWhiteSpace(dto.Name))
+        {
+            var table = await _context.Tables
+                .Include(t => t.Columns)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == tableId);
+
+            if (table == null)
+                return NotFound("Table not found");
+
+            var tableMap = await _context.Tables
+                .Include(t => t.Columns)
+                .AsNoTracking()
+                .ToDictionaryAsync(t => t.Id);
+
+            if (GetEffectiveColumns(table, tableMap)
+                .Any(c => c.Id != columnId &&
+                          string.Equals(c.Name, dto.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return BadRequest("A column with this name already exists on this table or an inherited parent table");
+            }
+
             column.Name = dto.Name;
+        }
 
         if (!string.IsNullOrWhiteSpace(dto.FieldType))
             column.FieldType = dto.FieldType;
@@ -112,6 +163,38 @@ public class ColumnsController : ControllerBase
 
         return NoContent();
     }
+
+    private static List<Column> GetEffectiveColumns(Table table, IReadOnlyDictionary<int, Table> tableMap)
+    {
+        var columns = new List<Column>();
+        AddEffectiveColumns(table, tableMap, columns, new HashSet<int>());
+
+        return columns
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .OrderBy(c => c.TableId == table.Id ? 1 : 0)
+            .ThenBy(c => c.Id)
+            .ToList();
+    }
+
+    private static void AddEffectiveColumns(
+        Table table,
+        IReadOnlyDictionary<int, Table> tableMap,
+        List<Column> columns,
+        HashSet<int> visitedTableIds)
+    {
+        if (!visitedTableIds.Add(table.Id))
+            return;
+
+        if (table.InheritProperties &&
+            table.ParentTableId.HasValue &&
+            tableMap.TryGetValue(table.ParentTableId.Value, out var parentTable))
+        {
+            AddEffectiveColumns(parentTable, tableMap, columns, visitedTableIds);
+        }
+
+        columns.AddRange(table.Columns);
+    }
 }
 
 // DTOs for Columns
@@ -121,6 +204,8 @@ public class ColumnResponseDto
     public string Name { get; set; } = string.Empty;
     public string FieldType { get; set; } = string.Empty;
     public bool IsRequired { get; set; }
+    public int TableId { get; set; }
+    public bool IsInherited { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
