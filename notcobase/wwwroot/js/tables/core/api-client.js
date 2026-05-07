@@ -1,7 +1,7 @@
 (function (app) {
   const API_ROOT = "/api";
 
-  async function api(path, options = {}) {
+  async function api(path, options = {}) { // handles API requests with error handling and JSON response parsing
     const response = await fetch(`${API_ROOT}${path}`, {
       ...options,
       headers: {

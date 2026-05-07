@@ -399,6 +399,14 @@ function TablesApp() {
                   h(
                     "button",
                     {
+                      className: "btn btn-outline-secondary",
+                      onClick: () => alert("Edit table function")
+                    },
+                    "Edit table",
+                  ),
+                  h(
+                    "button",
+                    {
                       className: "btn btn-outline-danger btn-sm",
                       onClick: () => deleteTable(activeTable),
                     },
@@ -477,25 +485,45 @@ function TablesApp() {
                           columns.map((column) =>
                             h(
                               "div",
-                              { key: column.id, className: "d-flex align-items-center justify-content-between border rounded px-2 py-1" },
+                              { key: column.id, className: "d-flex flex-row gap-2 align-items-center justify-content-between border rounded px-2 py-1" },
                               h(
                                 "div",
-                                null,
-                                h("span", { className: "fw-semibold" }, column.name),
-                                h("span", { className: "badge text-bg-light ms-2" }, column.fieldType),
-                                column.isRequired && h("span", { className: "badge text-bg-warning ms-2" }, "required"),
-                                column.isInherited && h("span", { className: "badge text-bg-info ms-2" }, "inherited"),
+                                { className: "d-flex align-items-center gap-2" },
+                                  h("span", { className: "fw-semibold" }, column.name),
+                                  column.isRequired && h("span", { className: "badge text-bg-warning text-danger ms-2" }, "*"),
                               ),
                               h(
-                                "button",
-                                {
-                                  className: "btn btn-sm btn-outline-danger",
-                                  disabled: column.isInherited,
-                                  title: column.isInherited ? "Inherited fields must be changed on the parent table" : "Delete field",
-                                  onClick: () => deleteColumn(column),
-                                },
-                                "Delete",
-                              ),
+                                "div",
+                                { className: "d-flex gap-1 align-items-center" },
+
+                                column.isInherited
+                                  ? h(
+                                      "span",
+                                      {
+                                        className: "text-muted small",
+                                      },
+                                      "Inherited fields must be changed on the parent table"
+                                    )
+                                  : [
+                                      h(
+                                        "button",
+                                        {
+                                          className: "btn btn-sm btn-outline-secondary",
+                                          onClick: () => alert("Edit field function"),
+                                        },
+                                        "Edit"
+                                      ),
+
+                                      h(
+                                        "button",
+                                        {
+                                          className: "btn btn-sm btn-outline-danger",
+                                          onClick: () => deleteColumn(column),
+                                        },
+                                        "Delete"
+                                      ),
+                                    ]
+                              )
                             ),
                           ),
                         ),
@@ -526,7 +554,7 @@ function TablesApp() {
                   ? h("div", { className: "p-4 text-muted" }, "This table has no fields yet.")
                   : h(
                       "table",
-                      { className: "table table-hover align-middle mb-0" },
+                      { className: "table table-bordered align-middle mb-0" },
                       h(
                         "thead",
                         { className: "table-light" },
@@ -534,7 +562,7 @@ function TablesApp() {
                           "tr",
                           null,
                           columns.map((column) => h("th", { key: column.id }, column.name)),
-                          h("th", { className: "text-end", style: { width: 96 } }, "Actions"),
+                          h("th", { className: "text-start", style: { width: 96 } }, "Actions"),
                         ),
                       ),
                       h( // table body
@@ -557,7 +585,7 @@ function TablesApp() {
                                       "button",
                                       {
                                         type: "button",
-                                        className: "btn btn-link text-start text-decoration-none p-0 w-100",
+                                        className: "btn btn-link text-start text-decoration-none p-0 w-100 pe-auto",
                                         onClick: (event) => openCellEditor(event, record, column),
                                       },
                                       formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),

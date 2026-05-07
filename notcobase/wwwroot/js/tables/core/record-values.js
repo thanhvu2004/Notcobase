@@ -13,7 +13,7 @@
     }, {});
   }
 
-  function cleanListItems(value) {
+  function cleanListItems(value) { // ensure value is an array of non-empty trimmed strings
     if (!Array.isArray(value)) {
       return [];
     }
@@ -23,7 +23,7 @@
       .filter((item) => item.length > 0);
   }
 
-  function coerceRecordValue(value, fieldType) {
+  function coerceRecordValue(value, fieldType) { // coerce value to the appropriate type based on fieldType
     if (fieldType === "number") {
       return value === "" ? null : Number(value);
     }
@@ -39,7 +39,7 @@
     return value;
   }
 
-  function formatRecordValue(value, fieldType) {
+  function formatRecordValue(value, fieldType) { // format value for display based on fieldType
     if (fieldType === "checkbox") {
       return value ? "Yes" : "No";
     }
