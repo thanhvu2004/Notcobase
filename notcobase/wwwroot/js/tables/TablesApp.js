@@ -1,55 +1,61 @@
+(function (app, React) {
 const { useEffect, useMemo, useState } = React;
 const h = React.createElement;
 const {
-  api,
-  FIELD_TYPES,
-  Modal,
   CellEditorPopup,
-  cleanListItems,
   coerceRecordValue,
-  emptyRecord,
-  formatRecordValue,
-} = window.Notcobase;
+  TableOperations,
+  ColumnOperations,
+  RecordOperations,
+  useTableState,
+  useColumnState,
+  useRecordState,
+  useCellEditor,
+  TablesList,
+  TableHeader,
+  TableStats,
+  FieldsList,
+  RecordsTable,
+  CreateTableModal,
+  EditTableModal,
+  CreateRecordModal,
+  EditFieldModal,
+} = app;
 
 function TablesApp() {
-  const [tables, setTables] = useState([]);
-  const [selectedTable, setSelectedTable] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [records, setRecords] = useState([]);
-  const [tableForm, setTableForm] = useState({
-    name: "",
-    description: "",
-    inheritProperties: false,
-    parentTableId: "",
-  });
-  const [fieldForm, setFieldForm] = useState({
-    name: "",
-    fieldType: "text",
-    isRequired: false,
-  });
-  const [recordForm, setRecordForm] = useState({});
-  const [cellEditor, setCellEditor] = useState(null);
-  const [showCreateTable, setShowCreateTable] = useState(false);
-  const [showCreateRecord, setShowCreateRecord] = useState(false);
+  // State management using custom hooks
+  const tableState = useTableState();
+  const columnState = useColumnState();
+  const recordState = useRecordState(columnState.columns);
+  const cellEditorState = useCellEditor();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [showCreateTable, setShowCreateTable] = useState(false);
+  const [showCreateRecord, setShowCreateRecord] = useState(false);
 
-  const selectedTableId = selectedTable?.id;
-  const parentTableOptions = tables;
+
+  const selectedTableId = tableState.selectedTable?.id;
+  const parentTableOptions = tableState.tables;
+  const activeTable = useMemo(
+    () => tableState.tables.find((table) => table.id === selectedTableId) || tableState.selectedTable,
+    [tableState.tables, tableState.selectedTable, selectedTableId],
+  );
 
   useEffect(() => {
     fetchTables();
   }, []);
 
   useEffect(() => {
-    setRecordForm(emptyRecord(columns));
-  }, [columns]);
+    recordState.resetRecordForm();
+  }, [columnState.columns]);
 
   const fetchTables = async () => {
     try {
       setLoading(true);
-      setTables(await api("/tables"));
+      const tables = await tableState.fetchTables();
+      tableState.setTables(tables);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -60,14 +66,11 @@ function TablesApp() {
 
   const fetchTableDetails = async (table) => {
     try {
-      setSelectedTable(table);
+      tableState.setSelectedTable(table);
       setLoading(true);
-      const [nextColumns, nextRecords] = await Promise.all([
-        api(`/tables/${table.id}/columns`),
-        api(`/tables/${table.id}/records`),
-      ]);
-      setColumns(nextColumns);
-      setRecords(nextRecords);
+      const { columns, records } = await tableState.fetchTableDetails(table);
+      columnState.setColumns(columns);
+      recordState.setRecords(records);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -79,41 +82,66 @@ function TablesApp() {
   const refreshSelectedTable = async () => {
     if (!selectedTableId) return;
 
-    const [nextColumns, nextRecords] = await Promise.all([
-      api(`/tables/${selectedTableId}/columns`),
-      api(`/tables/${selectedTableId}/records`),
-    ]);
-    setColumns(nextColumns);
-    setRecords(nextRecords);
+    const { columns, records } = await tableState.fetchTableDetails(tableState.selectedTable);
+    columnState.setColumns(columns);
+    recordState.setRecords(records);
     await fetchTables();
   };
 
   const createTable = async (event) => {
     event.preventDefault();
-    if (!tableForm.name.trim()) return;
+    if (!tableState.tableForm.name.trim()) return;
 
     try {
       setSaving(true);
       const payload = {
-        name: tableForm.name.trim(),
-        description: tableForm.description,
-        inheritProperties: tableForm.inheritProperties,
-        parentTableId: tableForm.inheritProperties ? Number(tableForm.parentTableId) : null,
+        name: tableState.tableForm.name.trim(),
+        description: tableState.tableForm.description,
+        inheritProperties: tableState.tableForm.inheritProperties,
+        parentTableId: tableState.tableForm.inheritProperties ? Number(tableState.tableForm.parentTableId) : null,
       };
 
-      const table = await api("/tables", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      setTableForm({
-        name: "",
-        description: "",
-        inheritProperties: false,
-        parentTableId: "",
-      });
+      const table = await TableOperations.createTable(payload);
+      tableState.resetTableForm();
       setShowCreateTable(false);
       await fetchTables();
       await fetchTableDetails(table);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateTable = async (event) => {
+    event.preventDefault();
+    if (!tableState.editingTable || !tableState.editTableForm.name.trim()) return;
+
+    try {
+      setSaving(true);
+      const payload = {
+        name: tableState.editTableForm.name.trim(),
+        description: tableState.editTableForm.description,
+        inheritProperties: tableState.editTableForm.inheritProperties,
+        parentTableId: tableState.editTableForm.inheritProperties ? Number(tableState.editTableForm.parentTableId) : null,
+      };
+
+      await TableOperations.updateTable(tableState.editingTable.id, payload);
+
+      tableState.setSelectedTable((table) =>
+        table?.id === tableState.editingTable.id
+          ? {
+              ...table,
+              ...payload,
+              parentTableName: payload.parentTableId
+                ? tableState.tables.find((item) => item.id === payload.parentTableId)?.name || table.parentTableName
+                : null,
+            }
+          : table,
+      );
+      tableState.resetEditTableForm();
+      await refreshSelectedTable();
+      setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -125,11 +153,11 @@ function TablesApp() {
     if (!window.confirm(`Delete "${table.name}" and all of its data?`)) return;
 
     try {
-      await api(`/tables/${table.id}`, { method: "DELETE" });
+      await TableOperations.deleteTable(table.id);
       if (selectedTableId === table.id) {
-        setSelectedTable(null);
-        setColumns([]);
-        setRecords([]);
+        tableState.setSelectedTable(null);
+        columnState.setColumns([]);
+        recordState.setRecords([]);
       }
       await fetchTables();
     } catch (err) {
@@ -139,16 +167,35 @@ function TablesApp() {
 
   const createColumn = async (event) => {
     event.preventDefault();
-    if (!selectedTableId || !fieldForm.name.trim()) return;
+    if (!selectedTableId || !columnState.fieldForm.name.trim()) return;
 
     try {
       setSaving(true);
-      await api(`/tables/${selectedTableId}/columns`, {
-        method: "POST",
-        body: JSON.stringify(fieldForm),
-      });
-      setFieldForm({ name: "", fieldType: "text", isRequired: false });
+      await ColumnOperations.createColumn(selectedTableId, columnState.fieldForm);
+      columnState.resetFieldForm();
       await refreshSelectedTable();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateColumn = async (event) => {
+    event.preventDefault();
+    if (!selectedTableId || !columnState.editingColumn || !columnState.editFieldForm.name.trim()) return;
+
+    try {
+      setSaving(true);
+      const data = {
+        name: columnState.editFieldForm.name.trim(),
+        fieldType: columnState.editFieldForm.fieldType,
+        isRequired: columnState.editFieldForm.isRequired,
+      };
+      await ColumnOperations.updateColumn(selectedTableId, columnState.editingColumn.id, data);
+      columnState.resetEditFieldForm();
+      await refreshSelectedTable();
+      setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -160,7 +207,7 @@ function TablesApp() {
     if (!window.confirm(`Delete field "${column.name}"? Existing record data will remain hidden.`)) return;
 
     try {
-      await api(`/tables/${selectedTableId}/columns/${column.id}`, { method: "DELETE" });
+      await ColumnOperations.deleteColumn(selectedTableId, column.id);
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
@@ -169,21 +216,18 @@ function TablesApp() {
 
   const createRecord = async (event) => {
     event.preventDefault();
-    if (!selectedTableId || columns.length === 0) return;
+    if (!selectedTableId || columnState.columns.length === 0) return;
 
-    const data = columns.reduce((values, column) => {
-      values[column.name] = coerceRecordValue(recordForm[column.name], column.fieldType);
+    const data = columnState.columns.reduce((values, column) => {
+      values[column.name] = coerceRecordValue(recordState.recordForm[column.name], column.fieldType);
       return values;
     }, {});
 
     try {
       setSaving(true);
-      await api(`/tables/${selectedTableId}/records`, {
-        method: "POST",
-        body: JSON.stringify({ data }),
-      });
+      await RecordOperations.createRecord(selectedTableId, data);
       setShowCreateRecord(false);
-      setRecordForm(emptyRecord(columns));
+      recordState.resetRecordForm();
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
@@ -196,87 +240,34 @@ function TablesApp() {
     if (!window.confirm("Delete this record?")) return;
 
     try {
-      await api(`/tables/${selectedTableId}/records/${record.id}`, { method: "DELETE" });
+      await RecordOperations.deleteRecord(selectedTableId, record.id);
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const getEditorPosition = (target) => {
-    const rect = target.getBoundingClientRect();
-    const popupWidth = 320;
-    const margin = 12;
-    const left = Math.min(
-      Math.max(rect.left, margin),
-      Math.max(window.innerWidth - popupWidth - margin, margin),
-    );
-    const top = rect.bottom + margin > window.innerHeight - 120
-      ? Math.max(rect.top - margin, margin)
-      : rect.bottom + 6;
-
-    return { left, top };
-  };
-
-  const openCellEditor = (event, record, column) => {
-    const currentValue = record.data?.[column.name];
-    setCellEditor({
-      recordId: record.id,
-      columnName: column.name,
-      fieldType: column.fieldType,
-      isRequired: column.isRequired,
-      value: column.fieldType === "list" ? [...cleanListItems(currentValue)] : (currentValue ?? ""),
-      newItem: "",
-      position: getEditorPosition(event.currentTarget),
-    });
-  };
-
-  const updateCellEditorValue = (value) => {
-    setCellEditor((editor) => (editor ? { ...editor, value } : editor));
-  };
-
-  const updateCellEditorListItem = (itemIndex, value) => {
-    setCellEditor((editor) => {
-      if (!editor || !Array.isArray(editor.value)) return editor;
-
-      const items = [...editor.value];
-      items[itemIndex] = value;
-      return { ...editor, value: items };
-    });
-  };
-
-  const removeCellEditorListItem = (itemIndex) => {
-    setCellEditor((editor) => {
-      if (!editor || !Array.isArray(editor.value)) return editor;
-
-      const items = editor.value.filter((_, index) => index !== itemIndex);
-      return { ...editor, value: items };
-    });
-  };
-
   const saveCellEditor = async () => {
-    if (!cellEditor || !selectedTableId) return;
+    if (!cellEditorState.cellEditor || !selectedTableId) return;
 
-    const record = records.find((item) => item.id === cellEditor.recordId);
+    const record = recordState.records.find((item) => item.id === cellEditorState.cellEditor.recordId);
     if (!record) return;
 
     const data = { ...(record.data || {}) };
-    if (cellEditor.fieldType === "list") {
-      data[cellEditor.columnName] = cleanListItems([
-        ...(Array.isArray(cellEditor.value) ? cellEditor.value : []),
-        cellEditor.newItem,
+    if (cellEditorState.cellEditor.fieldType === "list") {
+      const { cleanListItems } = window.Notcobase;
+      data[cellEditorState.cellEditor.columnName] = cleanListItems([
+        ...(Array.isArray(cellEditorState.cellEditor.value) ? cellEditorState.cellEditor.value : []),
+        cellEditorState.cellEditor.newItem,
       ]);
     } else {
-      data[cellEditor.columnName] = coerceRecordValue(cellEditor.value, cellEditor.fieldType);
+      data[cellEditorState.cellEditor.columnName] = coerceRecordValue(cellEditorState.cellEditor.value, cellEditorState.cellEditor.fieldType);
     }
 
     try {
       setSaving(true);
-      await api(`/tables/${selectedTableId}/records/${record.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ data }),
-      });
-      setCellEditor(null);
+      await RecordOperations.updateRecord(selectedTableId, record.id, data);
+      cellEditorState.closeCellEditor();
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
@@ -284,28 +275,6 @@ function TablesApp() {
       setSaving(false);
     }
   };
-
-  const setListItem = (columnName, itemIndex, value) => {
-    const items = Array.isArray(recordForm[columnName]) ? [...recordForm[columnName]] : [""];
-    items[itemIndex] = value;
-    setRecordForm({ ...recordForm, [columnName]: items });
-  };
-
-  const addListItem = (columnName) => {
-    const items = Array.isArray(recordForm[columnName]) ? recordForm[columnName] : [];
-    setRecordForm({ ...recordForm, [columnName]: [...items, ""] });
-  };
-
-  const removeListItem = (columnName, itemIndex) => {
-    const items = Array.isArray(recordForm[columnName]) ? [...recordForm[columnName]] : [""];
-    const nextItems = items.filter((_, index) => index !== itemIndex);
-    setRecordForm({ ...recordForm, [columnName]: nextItems.length > 0 ? nextItems : [""] });
-  };
-
-  const activeTable = useMemo(
-    () => tables.find((table) => table.id === selectedTableId) || selectedTable,
-    [tables, selectedTable, selectedTableId],
-  );
 
   return h(
     "div",
@@ -328,42 +297,17 @@ function TablesApp() {
 
     error && h("div", { className: "alert alert-danger" }, error),
 
-    h( // main content
+    h(
       "div",
       { className: "row g-4" },
-      h( // tables list
-        "aside",
-        { className: "col-lg-3" },
-        h(
-          "div",
-          { className: "list-group shadow-sm" },
-          loading && tables.length === 0
-            ? h("div", { className: "list-group-item text-muted" }, "Loading tables...")
-            : tables.length === 0
-              ? h("div", { className: "list-group-item text-muted" }, "No tables yet")
-              : tables.map((table) => // table list item
-                  h(
-                    "button",
-                    {
-                      key: table.id,
-                      className: `list-group-item list-group-item-action text-start ${selectedTableId === table.id ? "active" : ""}`,
-                      onClick: () => fetchTableDetails(table),
-                    },
-                    h("div", { className: "fw-semibold" }, table.name),
-                    h(
-                      "small",
-                      { className: selectedTableId === table.id ? "text-white-50" : "text-muted" },
-                      `${table.columnCount || 0} fields, ${table.recordCount || 0} records`,
-                    ),
-                    table.inheritProperties &&
-                      h(
-                        "small",
-                        { className: selectedTableId === table.id ? "d-block text-white-50" : "d-block text-muted" },
-                        `inherits from ${table.parentTableName || `table #${table.parentTableId}`}`,
-                      ),
-                  ),
-                ),
-        ),
+      h(
+        TablesList,
+        {
+          tables: tableState.tables,
+          selectedTableId: selectedTableId,
+          loading: loading,
+          onSelectTable: fetchTableDetails,
+        },
       ),
 
       h(
@@ -375,427 +319,128 @@ function TablesApp() {
               { className: "border rounded bg-light p-5 text-center" },
               h("h2", { className: "h5" }, "Select or create a table"),
             )
-          : h( // table details
+          : h(
               "div",
               null,
               h(
-                "div",
-                { className: "d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3" },
-                h( // table title and description
-                  "div",
-                  null,
-                  h("h2", { className: "h4 mb-1" }, activeTable.name),
-                  h("p", { className: "text-muted mb-0" }, activeTable.description || "No description"),
-                  activeTable.inheritProperties &&
-                    h(
-                      "div",
-                      { className: "small text-muted mt-1" },
-                      `Inherits properties from ${activeTable.parentTableName || `table #${activeTable.parentTableId}`}`,
-                    ),
-                ),
-                h( // action buttons
-                  "div",
-                  { className: "d-flex gap-2" },
-                  h(
-                    "button",
-                    {
-                      className: "btn btn-outline-secondary",
-                      onClick: () => alert("Edit table function")
-                    },
-                    "Edit table",
-                  ),
-                  h(
-                    "button",
-                    {
-                      className: "btn btn-outline-danger btn-sm",
-                      onClick: () => deleteTable(activeTable),
-                    },
-                    "Delete table",
-                  ),
-                  h(
-                    "button",
-                    {
-                      className: "btn btn-success btn-sm",
-                      disabled: columns.length === 0,
-                      onClick: () => setShowCreateRecord(true),
-                    },
-                    "Add record",
-                  ),
-                ),
+                TableHeader,
+                {
+                  activeTable: activeTable,
+                  onEdit: () => tableState.openEditTable(activeTable),
+                  onDelete: () => deleteTable(activeTable),
+                  onAddRecord: () => setShowCreateRecord(true),
+                  disableAddRecord: columnState.columns.length === 0,
+                },
               ),
 
               h(
                 "div",
                 { className: "row g-3 mb-4" },
                 h(
-                  "div",
-                  { className: "col-xl-5" },
-                  h(
-                    "div",
-                    { className: "border rounded p-3 h-100" },
-                    h("h3", { className: "h6 mb-3" }, "Fields"),
-                    h( // add column form
-                      "form",
-                      { className: "row g-2 mb-3", onSubmit: createColumn },
-                      h( // column name input
-                        "div",
-                        { className: "col-sm-5" },
-                        h("input", {
-                          className: "form-control form-control-sm",
-                          placeholder: "Field name",
-                          value: fieldForm.name,
-                          onChange: (event) => setFieldForm({ ...fieldForm, name: event.target.value }),
-                        }),
-                      ),
-                      h( // column type selector
-                        "div",
-                        { className: "col-sm-4" },
-                        h(
-                          "select",
-                          {
-                            className: "form-select form-select-sm",
-                            value: fieldForm.fieldType,
-                            onChange: (event) => setFieldForm({ ...fieldForm, fieldType: event.target.value }),
-                          },
-                          FIELD_TYPES.map((type) => h("option", { key: type, value: type }, type)),
-                        ),
-                      ),
-                      h( // required checkbox and add button
-                        "div",
-                        { className: "col-sm-3 d-grid" },
-                        h("button", { className: "btn btn-sm btn-primary", disabled: saving }, "Add"),
-                      ),
-                      h( // required checkbox
-                        "label",
-                        { className: "form-check ms-2 small" },
-                        h("input", {
-                          className: "form-check-input",
-                          type: "checkbox",
-                          checked: fieldForm.isRequired,
-                          onChange: (event) => setFieldForm({ ...fieldForm, isRequired: event.target.checked }),
-                        }),
-                        " Required",
-                      ),
-                    ),
-                    columns.length === 0
-                      ? h("div", { className: "text-muted small" }, "Add fields before creating records.")
-                      : h( // column list
-                          "div",
-                          { className: "d-flex flex-column gap-2" },
-                          columns.map((column) =>
-                            h(
-                              "div",
-                              { key: column.id, className: "d-flex flex-row gap-2 align-items-center justify-content-between border rounded px-2 py-1" },
-                              h(
-                                "div",
-                                { className: "d-flex align-items-center gap-2" },
-                                  h("span", { className: "fw-semibold" }, column.name),
-                                  column.isRequired && h("span", { className: "badge text-bg-warning text-danger ms-2" }, "*"),
-                              ),
-                              h(
-                                "div",
-                                { className: "d-flex gap-1 align-items-center" },
-
-                                column.isInherited
-                                  ? h(
-                                      "span",
-                                      {
-                                        className: "text-muted small",
-                                      },
-                                      "Inherited fields must be changed on the parent table"
-                                    )
-                                  : [
-                                      h(
-                                        "button",
-                                        {
-                                          className: "btn btn-sm btn-outline-secondary",
-                                          onClick: () => alert("Edit field function"),
-                                        },
-                                        "Edit"
-                                      ),
-
-                                      h(
-                                        "button",
-                                        {
-                                          className: "btn btn-sm btn-outline-danger",
-                                          onClick: () => deleteColumn(column),
-                                        },
-                                        "Delete"
-                                      ),
-                                    ]
-                              )
-                            ),
-                          ),
-                        ),
-                  ),
+                  FieldsList,
+                  {
+                    columns: columnState.columns,
+                    fieldForm: columnState.fieldForm,
+                    onFieldFormChange: columnState.setFieldForm,
+                    onAddField: createColumn,
+                    onEditField: columnState.openEditColumn,
+                    onDeleteField: deleteColumn,
+                    saving: saving,
+                  },
                 ),
-                h( // table stats
-                  "div",
-                  { className: "col-xl-7" },
-                  h(
-                    "div",
-                    { className: "border rounded p-3 h-100" },
-                    h("h3", { className: "h6 mb-3" }, "Table stats"),
-                    h(
-                      "div",
-                      { className: "row text-center" },
-                      h("div", { className: "col" }, h("div", { className: "h4 mb-0" }, columns.length), h("small", { className: "text-muted" }, "Fields")),
-                      h("div", { className: "col" }, h("div", { className: "h4 mb-0" }, records.length), h("small", { className: "text-muted" }, "Loaded records")),
-                      h("div", { className: "col" }, h("div", { className: "h4 mb-0" }, activeTable.recordCount || records.length), h("small", { className: "text-muted" }, "Total records")),
-                    ),
-                  ),
+                h(
+                  TableStats,
+                  {
+                    columnsCount: columnState.columns.length,
+                    recordsCount: recordState.records.length,
+                    totalRecords: activeTable.recordCount || recordState.records.length,
+                  },
                 ),
               ),
 
-              h( // records table
-                "div",
-                { className: "table-responsive border rounded" },
-                columns.length === 0
-                  ? h("div", { className: "p-4 text-muted" }, "This table has no fields yet.")
-                  : h(
-                      "table",
-                      { className: "table table-bordered align-middle mb-0" },
-                      h(
-                        "thead",
-                        { className: "table-light" },
-                        h(
-                          "tr",
-                          null,
-                          columns.map((column) => h("th", { key: column.id }, column.name)),
-                          h("th", { className: "text-start", style: { width: 96 } }, "Actions"),
-                        ),
-                      ),
-                      h( // table body
-                        "tbody",
-                        null,
-                        records.length === 0
-                          ? h("tr", null, h("td", { colSpan: columns.length + 1, className: "text-muted p-4" }, "No records yet."))
-                          : records.map((record) =>
-                              h(
-                                "tr",
-                                { key: record.id },
-                                columns.map((column) =>
-                                  h(
-                                    "td",
-                                    {
-                                      key: column.id,
-                                      style: { minWidth: 160 },
-                                    },
-                                    h(
-                                      "button",
-                                      {
-                                        type: "button",
-                                        className: "btn btn-link text-start text-decoration-none p-0 w-100 pe-auto",
-                                        onClick: (event) => openCellEditor(event, record, column),
-                                      },
-                                      formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),
-                                    ),
-                                  ),
-                                ),
-                                h(
-                                  "td",
-                                  { className: "text-end" },
-                                  h(
-                                    "button",
-                                    {
-                                      className: "btn btn-sm btn-outline-danger",
-                                      onClick: () => deleteRecord(record),
-                                    },
-                                    "Delete",
-                                  ),
-                                ),
-                              ),
-                            ),
-                      ),
-                    ),
+              h(
+                RecordsTable,
+                {
+                  columns: columnState.columns,
+                  records: recordState.records,
+                  onEditCell: cellEditorState.openCellEditor,
+                  onDeleteRecord: deleteRecord,
+                },
               ),
             ),
       ),
     ),
 
-    // create table modal
-    showCreateTable &&
-      h(
-        Modal,
-        { title: "Create table", onClose: () => setShowCreateTable(false) },
-        h(
-          "form",
-          { onSubmit: createTable },
-          h(
-            "div",
-            { className: "modal-body" },
-            h("label", { className: "form-label" }, "Name"),
-            h("input", {
-              className: "form-control mb-3",
-              autoFocus: true,
-              required: true,
-              value: tableForm.name,
-              onChange: (event) => setTableForm({ ...tableForm, name: event.target.value }),
-            }),
-            h("label", { className: "form-label" }, "Description"),
-            h("textarea", {
-              className: "form-control mb-3",
-              rows: 3,
-              value: tableForm.description,
-              onChange: (event) => setTableForm({ ...tableForm, description: event.target.value }),
-            }),
-            h(
-              "div",
-              { className: "form-check mb-3" },
-              h("input", {
-                id: "inheritProperties",
-                className: "form-check-input",
-                type: "checkbox",
-                checked: tableForm.inheritProperties,
-                disabled: parentTableOptions.length === 0,
-                onChange: (event) =>
-                  setTableForm({
-                    ...tableForm,
-                    inheritProperties: event.target.checked,
-                    parentTableId: event.target.checked ? tableForm.parentTableId : "",
-                  }),
-              }),
-              h("label", { className: "form-check-label", htmlFor: "inheritProperties" }, "Inherit properties from another table"),
-            ),
-            tableForm.inheritProperties &&
-              h(
-                "div",
-                { className: "mb-1" },
-                h("label", { className: "form-label" }, "Parent table"),
-                h(
-                  "select",
-                  {
-                    className: "form-select",
-                    required: true,
-                    value: tableForm.parentTableId,
-                    onChange: (event) => setTableForm({ ...tableForm, parentTableId: event.target.value }),
-                  },
-                  h("option", { value: "" }, "Select parent table"),
-                  parentTableOptions.map((table) =>
-                    h(
-                      "option",
-                      { key: table.id, value: table.id },
-                      `${table.name} (${table.columnCount || 0} fields)`,
-                    ),
-                  ),
-                ),
-              ),
-            parentTableOptions.length === 0 &&
-              h("div", { className: "form-text" }, "Create one table first before enabling inherited properties."),
-          ),
-          h(
-            "div",
-            { className: "modal-footer" },
-            h("button", { type: "button", className: "btn btn-secondary", onClick: () => setShowCreateTable(false) }, "Cancel"),
-            h(
-              "button",
-              {
-                className: "btn btn-primary",
-                disabled: saving || (tableForm.inheritProperties && !tableForm.parentTableId),
-              },
-              saving ? "Creating..." : "Create",
-            ),
-          ),
-        ),
-      ),
+    h(
+      CreateTableModal,
+      {
+        isOpen: showCreateTable,
+        tableForm: tableState.tableForm,
+        parentTableOptions: parentTableOptions,
+        onFormChange: tableState.setTableForm,
+        onSubmit: createTable,
+        onClose: () => setShowCreateTable(false),
+        saving: saving,
+      },
+    ),
 
-    // create record modal
-    showCreateRecord &&
-      h(
-        Modal,
-        { title: `Add record to ${activeTable?.name || "table"}`, onClose: () => setShowCreateRecord(false) },
-        h(
-          "form",
-          { onSubmit: createRecord },
-          h(
-            "div",
-            { className: "modal-body" },
-            columns.map((column) =>
-              h(
-                "div",
-                { className: "mb-3", key: column.id },
-                h("label", { className: "form-label" }, column.name),
-                column.fieldType === "checkbox"
-                  ? h(
-                      "div",
-                      { className: "form-check" },
-                      h("input", {
-                        className: "form-check-input",
-                        type: "checkbox",
-                        checked: Boolean(recordForm[column.name]),
-                        onChange: (event) => setRecordForm({ ...recordForm, [column.name]: event.target.checked }),
-                      }),
-                      h("label", { className: "form-check-label" }, "Checked"),
-                    )
-                  : column.fieldType === "list"
-                    ? h(
-                        "div",
-                        null,
-                        (Array.isArray(recordForm[column.name]) ? recordForm[column.name] : [""]).map((item, itemIndex) =>
-                          h(
-                            "div",
-                            { className: "input-group mb-2", key: itemIndex },
-                            h("input", {
-                              className: "form-control",
-                              required: column.isRequired && itemIndex === 0,
-                              value: item,
-                              placeholder: `Item ${itemIndex + 1}`,
-                              onChange: (event) => setListItem(column.name, itemIndex, event.target.value),
-                            }),
-                            h(
-                              "button",
-                              {
-                                type: "button",
-                                className: "btn btn-outline-danger",
-                                disabled: (recordForm[column.name] || [""]).length === 1,
-                                onClick: () => removeListItem(column.name, itemIndex),
-                              },
-                              "Remove",
-                            ),
-                          ),
-                        ),
-                        h(
-                          "button",
-                          {
-                            type: "button",
-                            className: "btn btn-sm btn-outline-primary",
-                            onClick: () => addListItem(column.name),
-                          },
-                          "Add item",
-                        ),
-                      )
-                  : h("input", {
-                      className: "form-control",
-                      type: column.fieldType === "number" ? "number" : column.fieldType === "date" ? "date" : "text",
-                      required: column.isRequired,
-                      value: recordForm[column.name] ?? "",
-                      onChange: (event) => setRecordForm({ ...recordForm, [column.name]: event.target.value }),
-                    }),
-              ),
-            ),
-          ),
-          h(
-            "div",
-            { className: "modal-footer" },
-            h("button", { type: "button", className: "btn btn-secondary", onClick: () => setShowCreateRecord(false) }, "Cancel"),
-            h("button", { className: "btn btn-success", disabled: saving }, saving ? "Saving..." : "Save record"),
-          ),
-        ),
-      ),
+    h(
+      EditTableModal,
+      {
+        isOpen: !!tableState.editingTable,
+        editingTable: tableState.editingTable,
+        editTableForm: tableState.editTableForm,
+        tables: tableState.tables,
+        onFormChange: tableState.setEditTableForm,
+        onSubmit: updateTable,
+        onClose: tableState.resetEditTableForm,
+        saving: saving,
+      },
+    ),
 
-    // cell editor popup
-    cellEditor &&
+    h(
+      CreateRecordModal,
+      {
+        isOpen: showCreateRecord,
+        activeTable: activeTable,
+        columns: columnState.columns,
+        recordForm: recordState.recordForm,
+        onRecordFormChange: recordState.setRecordForm,
+        onListItemChange: recordState.setListItem,
+        onAddListItem: recordState.addListItem,
+        onRemoveListItem: recordState.removeListItem,
+        onSubmit: createRecord,
+        onClose: () => setShowCreateRecord(false),
+        saving: saving,
+      },
+    ),
+
+    h(
+      EditFieldModal,
+      {
+        isOpen: !!columnState.editingColumn,
+        editingColumn: columnState.editingColumn,
+        editFieldForm: columnState.editFieldForm,
+        onFormChange: columnState.setEditFieldForm,
+        onSubmit: updateColumn,
+        onClose: columnState.resetEditFieldForm,
+        saving: saving,
+      },
+    ),
+
+    cellEditorState.cellEditor &&
       h(CellEditorPopup, {
-        editor: cellEditor,
+        editor: cellEditorState.cellEditor,
         saving,
-        onValueChange: updateCellEditorValue,
-        onListItemChange: updateCellEditorListItem,
-        onListItemRemove: removeCellEditorListItem,
-        onNewItemChange: (value) => setCellEditor({ ...cellEditor, newItem: value }),
+        onValueChange: cellEditorState.updateCellEditorValue,
+        onListItemChange: cellEditorState.updateCellEditorListItem,
+        onListItemRemove: cellEditorState.removeCellEditorListItem,
+        onNewItemChange: (value) => cellEditorState.setCellEditor({ ...cellEditorState.cellEditor, newItem: value }),
         onSave: saveCellEditor,
-        onCancel: () => setCellEditor(null),
+        onCancel: cellEditorState.closeCellEditor,
       }),
   );
 }
 
-window.Notcobase.TablesApp = TablesApp;
+app.TablesApp = TablesApp;
+})(window.Notcobase, React);

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using notcobase.Data;
 using notcobase.Models;
+using System.Text.Json;
 
 namespace notcobase.Controllers;
 
@@ -111,7 +112,12 @@ public class ColumnsController : ControllerBase
         if (column == null)
             return NotFound();
 
-        if (!string.IsNullOrWhiteSpace(dto.Name))
+        var oldName = column.Name;
+        var newName = dto.Name?.Trim();
+        var nameChanged = !string.IsNullOrWhiteSpace(newName) &&
+            !string.Equals(oldName, newName, StringComparison.Ordinal);
+
+        if (!string.IsNullOrWhiteSpace(newName))
         {
             var table = await _context.Tables
                 .Include(t => t.Columns)
@@ -128,12 +134,12 @@ public class ColumnsController : ControllerBase
 
             if (GetEffectiveColumns(table, tableMap)
                 .Any(c => c.Id != columnId &&
-                          string.Equals(c.Name, dto.Name, StringComparison.OrdinalIgnoreCase)))
+                          string.Equals(c.Name, newName, StringComparison.OrdinalIgnoreCase)))
             {
                 return BadRequest("A column with this name already exists on this table or an inherited parent table");
             }
 
-            column.Name = dto.Name;
+            column.Name = newName!;
         }
 
         if (!string.IsNullOrWhiteSpace(dto.FieldType))
@@ -141,6 +147,27 @@ public class ColumnsController : ControllerBase
 
         if (dto.IsRequired.HasValue)
             column.IsRequired = dto.IsRequired.Value;
+
+        if (nameChanged)
+        {
+            var records = await _context.Records
+                .Where(r => r.TableId == tableId)
+                .ToListAsync();
+
+            foreach (var record in records)
+            {
+                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(record.Data) ?? new();
+                if (!data.TryGetValue(oldName, out var value))
+                    continue;
+
+                if (!data.ContainsKey(newName!))
+                    data[newName!] = value;
+
+                data.Remove(oldName);
+                record.Data = JsonSerializer.Serialize(data);
+                record.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
