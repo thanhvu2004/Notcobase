@@ -50,7 +50,7 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                     ),
                     h(
                       "td",
-                      { className: "text-end" },
+                      { className: "text-center" },
                       h(
                         "button",
                         {

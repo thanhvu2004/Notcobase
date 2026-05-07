@@ -1,8 +1,6 @@
 namespace notcobase.Models;
 
-/// <summary>
 /// Represents a column definition in a table
-/// </summary>
 public class Column
 {
     public int Id { get; set; }
