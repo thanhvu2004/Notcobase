@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using notcobase.Data;
 using notcobase.Models;
+using notcobase.Authorization;
 
 namespace notcobase.Controllers
 {
@@ -18,6 +19,7 @@ namespace notcobase.Controllers
             _context = context;
         }
 
+        [Permission("users.view")]
         [HttpGet]
         public async Task<IActionResult> GetUsers()
         {
@@ -38,6 +40,7 @@ namespace notcobase.Controllers
             return Ok(users);
         }
 
+        [Permission("users.view")]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetUser(int id)
         {
@@ -62,6 +65,7 @@ namespace notcobase.Controllers
             });
         }
 
+        [Permission("users.create")]
         [HttpPost]
         public async Task<IActionResult> CreateUser(CreateUserDto dto)
         {
@@ -91,6 +95,7 @@ namespace notcobase.Controllers
             });
         }
 
+        [Permission("users.edit")]
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateUser(int id, UpdateUserDto dto)
         {
@@ -111,6 +116,7 @@ namespace notcobase.Controllers
             });
         }
 
+        [Permission("users.delete")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
@@ -131,6 +137,7 @@ namespace notcobase.Controllers
             });
         }
 
+        [Permission("roles.assign")]
         [HttpPost("{id}/roles")]
         public async Task<IActionResult> AssignRole(
             int id,
@@ -176,6 +183,7 @@ namespace notcobase.Controllers
             });
         }
 
+        [Permission("roles.remove")]
         [HttpDelete("{id}/roles/{roleId}")]
         public async Task<IActionResult> RemoveRole(
             int id,

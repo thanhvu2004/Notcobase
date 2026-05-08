@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using notcobase.Data;
 using notcobase.Models;
+using notcobase.Authorization;
 
 namespace notcobase.Controllers
 {
@@ -19,6 +20,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet]
+        [Permission("roles.view")]
         public async Task<IActionResult> GetRoles()
         {
             var roles = await _context.Roles
@@ -39,6 +41,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet("{id}")]
+        [Permission("roles.view")]
         public async Task<IActionResult> GetRole(int id)
         {
             var role = await _context.Roles
@@ -63,6 +66,7 @@ namespace notcobase.Controllers
         }
 
         [HttpPost]
+        [Permission("roles.create")]
         public async Task<IActionResult> CreateRole(CreateRoleDto dto)
         {
             var existingRole = await _context.Roles
@@ -89,6 +93,7 @@ namespace notcobase.Controllers
         }
 
         [HttpPut("{id}")]
+        [Permission("roles.edit")]
         public async Task<IActionResult> UpdateRole(
             int id,
             UpdateRoleDto dto)
@@ -111,6 +116,7 @@ namespace notcobase.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Permission("roles.delete")]
         public async Task<IActionResult> DeleteRole(int id)
         {
             var role = await _context.Roles.FindAsync(id);
@@ -131,6 +137,7 @@ namespace notcobase.Controllers
         }
 
         [HttpPost("{id}/permissions")]
+        [Permission("permissions.assign")]
         public async Task<IActionResult> AssignPermission(
             int id,
             AssignPermissionDto dto)
@@ -179,6 +186,7 @@ namespace notcobase.Controllers
         }
 
         [HttpDelete("{id}/permissions/{permissionId}")]
+        [Permission("permissions.remove")]
         public async Task<IActionResult> RemovePermission(
             int id,
             int permissionId)

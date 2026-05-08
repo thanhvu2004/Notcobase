@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
 using System.Text.Json;
@@ -8,6 +10,7 @@ namespace notcobase.Controllers;
 
 [ApiController]
 [Route("api/tables/{tableId}/[controller]")]
+[Authorize]
 public class ColumnsController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -19,6 +22,7 @@ public class ColumnsController : ControllerBase
 
     /// Get all columns for a table
     [HttpGet]
+    [Permission("columns.view")]
     public async Task<ActionResult<IEnumerable<ColumnResponseDto>>> GetColumns(int tableId)
     {
         var table = await _context.Tables
@@ -52,6 +56,7 @@ public class ColumnsController : ControllerBase
 
     /// Create a new column
     [HttpPost]
+    [Permission("columns.create")]
     public async Task<ActionResult<ColumnResponseDto>> CreateColumn(int tableId, [FromBody] CreateColumnDto dto)
     {
         // Verify table exists
@@ -104,6 +109,7 @@ public class ColumnsController : ControllerBase
 
     /// Update a column
     [HttpPut("{columnId}")]
+    [Permission("columns.edit")]
     public async Task<IActionResult> UpdateColumn(int tableId, int columnId, [FromBody] UpdateColumnDto dto)
     {
         var column = await _context.Columns
@@ -177,6 +183,7 @@ public class ColumnsController : ControllerBase
 
     /// Delete a column
     [HttpDelete("{columnId}")]
+    [Permission("columns.delete")]
     public async Task<IActionResult> DeleteColumn(int tableId, int columnId)
     {
         var column = await _context.Columns

@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
 
@@ -19,6 +20,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet]
+        [Permission("permissions.view")]
         public async Task<IActionResult> GetPermissions()
         {
             var permissions = await _context.Permissions
@@ -33,6 +35,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet("{id}")]
+        [Permission("permissions.view")]
         public async Task<IActionResult> GetPermission(int id)
         {
             var permission = await _context.Permissions
@@ -51,6 +54,7 @@ namespace notcobase.Controllers
         }
 
         [HttpPost]
+        [Permission("permissions.create")]
         public async Task<IActionResult> CreatePermission(
             CreatePermissionDto dto)
         {
@@ -79,6 +83,7 @@ namespace notcobase.Controllers
         }
 
         [HttpPut("{id}")]
+        [Permission("permissions.edit")]
         public async Task<IActionResult> UpdatePermission(
             int id,
             UpdatePermissionDto dto)
@@ -102,6 +107,7 @@ namespace notcobase.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Permission("permissions.delete")]
         public async Task<IActionResult> DeletePermission(int id)
         {
             var permission = await _context.Permissions

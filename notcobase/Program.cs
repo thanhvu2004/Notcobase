@@ -1,4 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
+using notcobase.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using notcobase.Data;
@@ -12,6 +15,20 @@ builder.Services.AddControllers();
 
 // Razor Pages
 builder.Services.AddRazorPages();
+
+// Session
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
+// HttpClient
+builder.Services.AddHttpClient();
+
+// Database Seeder
+builder.Services.AddScoped<notcobase.Services.DatabaseSeeder>();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -28,6 +45,8 @@ builder.Services.AddCors(options =>
 // DATABASE
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=app.db"));
+
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // JWT AUTHENTICATION
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -52,6 +71,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // AUTHORIZATION
 builder.Services.AddAuthorization();
 
+builder.Services.AddSingleton<
+    IAuthorizationHandler,
+    PermissionHandler>();
+
+builder.Services.AddSingleton<
+    IAuthorizationPolicyProvider,
+    PermissionPolicyProvider>();
+
 var app = builder.Build();
 
 // MIDDLEWARE
@@ -73,6 +100,8 @@ else
 app.UseHttpsRedirection();
 // Static Files
 app.UseStaticFiles();
+// Session
+app.UseSession();
 // Routing
 app.UseRouting();
 // Authentication
@@ -83,4 +112,12 @@ app.UseAuthorization();
 // ENDPOINTS
 app.MapControllers();
 app.MapRazorPages();
+
+// Seed database
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<notcobase.Services.DatabaseSeeder>();
+    await seeder.SeedAsync();
+}
+
 app.Run();

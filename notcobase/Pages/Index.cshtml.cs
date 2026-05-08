@@ -12,9 +12,16 @@ public class IndexModel : PageModel
         _logger = logger;
     }
 
-    public void OnGet()
+    public IActionResult OnGet()
     {
+        // Check if user is authenticated via session
+        var token = HttpContext.Session.GetString("JwtToken");
+        if (string.IsNullOrEmpty(token))
+        {
+            return RedirectToPage("/Login");
+        }
 
+        return Page();
     }
 }
 

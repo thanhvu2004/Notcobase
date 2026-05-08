@@ -25,7 +25,21 @@
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/Index">Database</a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Users">User & Permissions</a>
+                        </li>
                     </ul>
+                    <div class="d-flex align-items-center gap-2">
+                        @{
+                            var username = Context.Session.GetString("Username");
+                            var roles = Context.Session.GetString("UserRoles")?.Split(',') ?? new string[0];
+                        }
+                        @if (!string.IsNullOrEmpty(username))
+                        {
+                            <span class="badge bg-primary">@(roles.Length > 0 ? roles[0] : "User")</span>
+                            <a href="/Login?handler=Logout" class="btn btn-outline-danger btn-sm">Logout</a>
+                        }
+                    </div>
                 </div>
             </div>
         </nav>

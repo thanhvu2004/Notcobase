@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
 using System.Text.Json;
@@ -8,6 +10,7 @@ namespace notcobase.Controllers;
 
 [ApiController]
 [Route("api/tables/{tableId}/[controller]")]
+[Authorize]
 public class RecordsController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -19,6 +22,7 @@ public class RecordsController : ControllerBase
 
     /// Get all records from a table
     [HttpGet]
+    [Permission("records.view")]
     public ActionResult<IEnumerable<RecordDto>> GetRecords(int tableId, [FromQuery] int? skip = 0, [FromQuery] int? limit = 100)
     {
         // Verify table exists
@@ -49,6 +53,7 @@ public class RecordsController : ControllerBase
 
     /// Get a specific record
     [HttpGet("{recordId}")]
+    [Permission("records.view")]
     public ActionResult<RecordDto> GetRecord(int tableId, int recordId)
     {
         var record = _context.Records
@@ -70,6 +75,7 @@ public class RecordsController : ControllerBase
 
     /// Create a new record
     [HttpPost]
+    [Permission("records.create")]
     public async Task<ActionResult<RecordDto>> CreateRecord(int tableId, [FromBody] CreateRecordDto dto)
     {
         // Verify table exists
@@ -97,6 +103,7 @@ public class RecordsController : ControllerBase
 
     /// Update a record
     [HttpPut("{recordId}")]
+    [Permission("records.edit")]
     public async Task<IActionResult> UpdateRecord(int tableId, int recordId, [FromBody] UpdateRecordDto dto)
     {
         var record = await _context.Records
@@ -116,6 +123,7 @@ public class RecordsController : ControllerBase
 
     /// Delete a record
     [HttpDelete("{recordId}")]
+    [Permission("records.delete")]
     public async Task<IActionResult> DeleteRecord(int tableId, int recordId)
     {
         var record = await _context.Records
@@ -134,6 +142,7 @@ public class RecordsController : ControllerBase
     /// Bulk delete records
     
     [HttpPost("bulk-delete")]
+    [Permission("records.delete")]
     public async Task<IActionResult> BulkDeleteRecords(int tableId, [FromBody] BulkDeleteDto dto)
     {
         var records = await _context.Records

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
 
@@ -7,6 +9,7 @@ namespace notcobase.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TablesController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -18,6 +21,7 @@ public class TablesController : ControllerBase
 
     /// Get all tables
     [HttpGet]
+    [Permission("tables.view")]
     public async Task<ActionResult<IEnumerable<TableDto>>> GetTables()
     {
         var tables = await _context.Tables
@@ -48,6 +52,7 @@ public class TablesController : ControllerBase
 
     /// Get a specific table by ID
     [HttpGet("{id}")]
+    [Permission("tables.view")]
     public async Task<ActionResult<TableDetailsDto>> GetTable(int id)
     {
         var table = await _context.Tables
@@ -91,6 +96,7 @@ public class TablesController : ControllerBase
 
     /// Create a new table
     [HttpPost]
+    [Permission("tables.create")]
     public async Task<ActionResult<TableDto>> CreateTable([FromBody] CreateTableDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
@@ -144,6 +150,7 @@ public class TablesController : ControllerBase
 
     /// Update a table
     [HttpPut("{id}")]
+    [Permission("tables.edit")]
     public async Task<IActionResult> UpdateTable(int id, [FromBody] UpdateTableDto dto)
     {
         var table = await _context.Tables.FindAsync(id);
@@ -186,6 +193,7 @@ public class TablesController : ControllerBase
 
     /// Delete a table
     [HttpDelete("{id}")]
+    [Permission("tables.delete")]
     public async Task<IActionResult> DeleteTable(int id)
     {
         var table = await _context.Tables.FindAsync(id);
