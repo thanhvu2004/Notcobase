@@ -22,6 +22,20 @@ const {
   EditFieldModal,
 } = app;
 
+function can(permission) {
+  if (!permission) {
+    return true;
+  }
+
+  return window.Auth?.hasPermission(permission);
+}
+
+function withPermission(permission, component) {
+  return can(permission)
+    ? component
+    : null;
+}
+
 function TablesApp() {
   // State management using custom hooks
   const tableState = useTableState();
@@ -291,7 +305,17 @@ function TablesApp() {
         "div",
         { className: "d-flex gap-2" },
         h("button", { className: "btn btn-outline-secondary", onClick: fetchTables }, "Refresh"),
-        h("button", { className: "btn btn-primary", onClick: () => setShowCreateTable(true) }, "Create table"),
+        withPermission(
+          "tables.create",
+          h(
+            "button",
+            {
+              className: "btn btn-primary",
+              onClick: () => setShowCreateTable(true)
+            },
+            "Create table"
+          )
+        ),
       ),
     ),
 
@@ -371,74 +395,89 @@ function TablesApp() {
       ),
     ),
 
-    h(
-      CreateTableModal,
-      {
-        isOpen: showCreateTable,
-        tableForm: tableState.tableForm,
-        parentTableOptions: parentTableOptions,
-        onFormChange: tableState.setTableForm,
-        onSubmit: createTable,
-        onClose: () => setShowCreateTable(false),
-        saving: saving,
-      },
+    withPermission(
+      "tables.create",
+      h(
+        CreateTableModal,
+        {
+          isOpen: showCreateTable,
+          tableForm: tableState.tableForm,
+          parentTableOptions: parentTableOptions,
+          onFormChange: tableState.setTableForm,
+          onSubmit: createTable,
+          onClose: () => setShowCreateTable(false),
+          saving: saving,
+        },
+      )
     ),
 
-    h(
-      EditTableModal,
-      {
-        isOpen: !!tableState.editingTable,
-        editingTable: tableState.editingTable,
-        editTableForm: tableState.editTableForm,
-        tables: tableState.tables,
-        onFormChange: tableState.setEditTableForm,
-        onSubmit: updateTable,
-        onClose: tableState.resetEditTableForm,
-        saving: saving,
-      },
+    withPermission(
+      "tables.edit",
+      h(
+        EditTableModal,
+        {
+          isOpen: !!tableState.editingTable,
+          editingTable: tableState.editingTable,
+          editTableForm: tableState.editTableForm,
+          tables: tableState.tables,
+          onFormChange: tableState.setEditTableForm,
+          onSubmit: updateTable,
+          onClose: tableState.resetEditTableForm,
+          saving: saving,
+        },
+      )
     ),
 
-    h(
-      CreateRecordModal,
-      {
-        isOpen: showCreateRecord,
-        activeTable: activeTable,
-        columns: columnState.columns,
-        recordForm: recordState.recordForm,
-        onRecordFormChange: recordState.setRecordForm,
-        onListItemChange: recordState.setListItem,
-        onAddListItem: recordState.addListItem,
-        onRemoveListItem: recordState.removeListItem,
-        onSubmit: createRecord,
-        onClose: () => setShowCreateRecord(false),
-        saving: saving,
-      },
+    withPermission(
+      "records.create",
+      h(
+        CreateRecordModal,
+        {
+          isOpen: showCreateRecord,
+          activeTable: activeTable,
+          columns: columnState.columns,
+          recordForm: recordState.recordForm,
+          onRecordFormChange: recordState.setRecordForm,
+          onListItemChange: recordState.setListItem,
+          onAddListItem: recordState.addListItem,
+          onRemoveListItem: recordState.removeListItem,
+          onSubmit: createRecord,
+          onClose: () => setShowCreateRecord(false),
+          saving: saving,
+        },
+      )
     ),
 
-    h(
-      EditFieldModal,
-      {
-        isOpen: !!columnState.editingColumn,
-        editingColumn: columnState.editingColumn,
-        editFieldForm: columnState.editFieldForm,
-        onFormChange: columnState.setEditFieldForm,
-        onSubmit: updateColumn,
-        onClose: columnState.resetEditFieldForm,
-        saving: saving,
-      },
+    withPermission(
+      "columns.edit",
+      h(
+        EditFieldModal,
+        {
+          isOpen: !!columnState.editingColumn,
+          editingColumn: columnState.editingColumn,
+          editFieldForm: columnState.editFieldForm,
+          onFormChange: columnState.setEditFieldForm,
+          onSubmit: updateColumn,
+          onClose: columnState.resetEditFieldForm,
+          saving: saving,
+        },
+      )
     ),
 
     cellEditorState.cellEditor &&
-      h(CellEditorPopup, {
-        editor: cellEditorState.cellEditor,
-        saving,
-        onValueChange: cellEditorState.updateCellEditorValue,
-        onListItemChange: cellEditorState.updateCellEditorListItem,
-        onListItemRemove: cellEditorState.removeCellEditorListItem,
-        onNewItemChange: (value) => cellEditorState.setCellEditor({ ...cellEditorState.cellEditor, newItem: value }),
-        onSave: saveCellEditor,
-        onCancel: cellEditorState.closeCellEditor,
-      }),
+      withPermission(
+        "records.edit",
+        h(CellEditorPopup, {
+          editor: cellEditorState.cellEditor,
+          saving,
+          onValueChange: cellEditorState.updateCellEditorValue,
+          onListItemChange: cellEditorState.updateCellEditorListItem,
+          onListItemRemove: cellEditorState.removeCellEditorListItem,
+          onNewItemChange: (value) => cellEditorState.setCellEditor({ ...cellEditorState.cellEditor, newItem: value }),
+          onSave: saveCellEditor,
+          onCancel: cellEditorState.closeCellEditor,
+        })
+      ),
   );
 }
 

@@ -22,7 +22,7 @@ public class ColumnsController : ControllerBase
 
     /// Get all columns for a table
     [HttpGet]
-    [Permission("columns.view")]
+    // [Permission("columns.view")]
     public async Task<ActionResult<IEnumerable<ColumnResponseDto>>> GetColumns(int tableId)
     {
         var table = await _context.Tables

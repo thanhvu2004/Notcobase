@@ -1,6 +1,18 @@
 (function (app, React) {
 const h = React.createElement;
 
+function can(permission) {
+  if (!permission) {
+    return true;
+  }
+
+  return window.Auth?.hasPermission(permission);
+}
+
+function withPermission(permission, component) {
+  return can(permission) ? component : null;
+}
+
 function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRecord }) {
   return h(
     "div",
@@ -20,6 +32,7 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
     h(
       "div",
       { className: "d-flex gap-2" },
+      withPermission("edit-table",
       h(
         "button",
         {
@@ -27,16 +40,16 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
           onClick: onEdit,
         },
         "Edit table",
-      ),
-      h(
+      )),
+      withPermission("delete-table", h(
         "button",
         {
           className: "btn btn-outline-danger btn-sm",
           onClick: onDelete,
         },
         "Delete table",
-      ),
-      h(
+      )),
+      withPermission("create-record", h(
         "button",
         {
           className: "btn btn-success btn-sm",
@@ -44,7 +57,7 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
           onClick: onAddRecord,
         },
         "Add record",
-      ),
+      )),
     ),
   );
 }

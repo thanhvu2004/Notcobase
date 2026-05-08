@@ -1,6 +1,18 @@
 const { useState, useEffect } = React;
 const h = React.createElement;
 
+function can(permission) {
+  if (!permission) {
+    return true;
+  }
+
+  return window.Auth?.hasPermission(permission);
+}
+
+function withPermission(permission, component) {
+  return can(permission) ? component : null;
+}
+
 function UsersApp() {
     const [activeTab, setActiveTab] = useState("users");
     const [users, setUsers] = useState([]);
@@ -10,7 +22,26 @@ function UsersApp() {
     const [error, setError] = useState("");
 
     useEffect(() => {
-        console.log("UsersApp mounted, loading data...");
+        // Auto-select first authorized tab
+        const availableTabs = [];
+
+        if (can("users.view")) {
+            availableTabs.push("users");
+        }
+
+        if (can("roles.view")) {
+            availableTabs.push("roles");
+        }
+
+        if (can("permissions.view")) {
+            availableTabs.push("permissions");
+        }
+
+        // If current tab unauthorized, switch to first available tab
+        if (!availableTabs.includes(activeTab)) {
+            setActiveTab(availableTabs[0] || "");
+        }
+
         loadAllData();
     }, []);
 
@@ -18,7 +49,6 @@ function UsersApp() {
         setLoading(true);
         setError("");
         try {
-            console.log("Fetching users, roles, permissions...");
             const [u, r, p] = await Promise.all([
                 AdminApi.users.list(),
                 AdminApi.roles.list(),
@@ -36,6 +66,18 @@ function UsersApp() {
     };
 
     const handleTabChange = (tab) => {
+
+        const permissionMap = {
+            users: "users.view",
+            roles: "roles.view",
+            permissions: "permissions.view"
+        };
+
+        // Prevent switching to unauthorized tab
+        if (!can(permissionMap[tab])) {
+            return;
+        }
+
         setActiveTab(tab);
         setError("");
     };
@@ -50,7 +92,7 @@ function UsersApp() {
             )
         ),
         h("ul", { className: "nav nav-tabs mb-4" },
-            h("li", { className: "nav-item" },
+            withPermission("users.view", h("li", { className: "nav-item" },
                 h("button",
                     { 
                         className: `nav-link ${activeTab === "users" ? "active" : ""}`,
@@ -58,8 +100,8 @@ function UsersApp() {
                     },
                     "Users"
                 )
-            ),
-            h("li", { className: "nav-item" },
+            )),
+            withPermission("roles.view", h("li", { className: "nav-item" },
                 h("button",
                     { 
                         className: `nav-link ${activeTab === "roles" ? "active" : ""}`,
@@ -67,8 +109,8 @@ function UsersApp() {
                     },
                     "Roles"
                 )
-            ),
-            h("li", { className: "nav-item" },
+            )),
+            withPermission("permissions.view", h("li", { className: "nav-item" },
                 h("button",
                     { 
                         className: `nav-link ${activeTab === "permissions" ? "active" : ""}`,
@@ -76,25 +118,25 @@ function UsersApp() {
                     },
                     "Permissions"
                 )
-            )
+            ))
         ),
-        activeTab === "users" && h(UsersTab, {
+        withPermission("users.view", activeTab === "users" && h(UsersTab, {
             users,
             roles,
             onUpdate: loadAllData,
             loading
-        }),
-        activeTab === "roles" && h(RolesTab, {
+        })),
+        withPermission("roles.view", activeTab === "roles" && h(RolesTab, {
             roles,
             permissions,
             onUpdate: loadAllData,
             loading
-        }),
-        activeTab === "permissions" && h(PermissionsTab, {
+        })),
+        withPermission("permissions.view", activeTab === "permissions" && h(PermissionsTab, {
             permissions,
             onUpdate: loadAllData,
             loading
-        })
+        }))
     );
 }
 
@@ -160,7 +202,8 @@ function UsersTab({ users, roles, onUpdate, loading }) {
                     h("h6", { className: "mb-0" }, user.username),
                     h("small", null, "Roles: " + (user.roles?.join(", ") || "None"))
                 ),
-                h("button",
+                withPermission("users.delete", h(
+                    "button",
                     {
                         type: "button",
                         className: "btn btn-sm btn-danger",
@@ -170,7 +213,7 @@ function UsersTab({ users, roles, onUpdate, loading }) {
                         }
                     },
                     "Delete"
-                )
+                ))
             )
         )
     );
@@ -182,14 +225,14 @@ function UsersTab({ users, roles, onUpdate, loading }) {
                 return h("span",
                     { key: idx, className: "badge bg-info me-2" },
                     roleName,
-                    h("button",
+                    withPermission("roles.delete", h("button",
                         {
                             type: "button",
                             className: "btn-close btn-close-white ms-1",
                             onClick: () => handleRemoveRole(selectedUser.id, role?.id),
                             style: { fontSize: "0.7rem" }
                         }
-                    )
+                    ))
                 );
             })
         )
@@ -213,13 +256,14 @@ function UsersTab({ users, roles, onUpdate, loading }) {
     });
 
     return h("div", null,
-        h("button",
+        withPermission("users.create", h(
+            "button",
             {
                 className: "btn btn-primary mb-3",
                 onClick: () => setShowForm(!showForm)
             },
             showForm ? "Cancel" : "Add New User"
-        ),
+        )),
         showForm && h("div", { className: "card mb-3" },
             h("div", { className: "card-body" },
                 h("form", { onSubmit: handleAddUser },
@@ -268,162 +312,263 @@ function UsersTab({ users, roles, onUpdate, loading }) {
 }
 
 function RolesTab({ roles, permissions, onUpdate, loading }) {
-    const [showForm, setShowForm] = useState(false);
-    const [formData, setFormData] = useState({ name: "" });
-    const [selectedRole, setSelectedRole] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({ name: "" });
+  const [selectedRole, setSelectedRole] = useState(null);
 
-    const handleAddRole = async (e) => {
-        e.preventDefault();
-        try {
-            await AdminApi.roles.create(formData.name);
-            setFormData({ name: "" });
-            setShowForm(false);
-            onUpdate();
-        } catch (err) {
-            alert("Error creating role: " + err.message);
+  const handleAddRole = async (e) => {
+    e.preventDefault();
+
+    try {
+      await AdminApi.roles.create(formData.name);
+
+      setFormData({ name: "" });
+      setShowForm(false);
+
+      onUpdate();
+    } catch (err) {
+      alert("Error creating role: " + err.message);
+    }
+  };
+
+  const handleDeleteRole = async (id) => {
+    if (!confirm("Are you sure you want to delete this role?")) {
+      return;
+    }
+
+    try {
+      await AdminApi.roles.delete(id);
+
+      onUpdate();
+
+      setSelectedRole(null);
+    } catch (err) {
+      alert("Error deleting role: " + err.message);
+    }
+  };
+
+  const handlePermissionToggle = async (permission, checked) => {
+    if (!selectedRole) {
+      return;
+    }
+
+    try {
+      if (checked) {
+        await AdminApi.roles.assignPermission(selectedRole.id, permission.id);
+      } else {
+        await AdminApi.roles.removePermission(selectedRole.id, permission.id);
+      }
+
+      // Update selectedRole immediately in frontend
+      setSelectedRole((prev) => {
+        if (!prev) {
+          return prev;
         }
-    };
 
-    const handleDeleteRole = async (id) => {
-        if (confirm("Are you sure you want to delete this role?")) {
-            try {
-                await AdminApi.roles.delete(id);
-                onUpdate();
-                setSelectedRole(null);
-            } catch (err) {
-                alert("Error deleting role: " + err.message);
-            }
+        let updatedPermissions = [...(prev.permissions || [])];
+
+        if (checked) {
+          if (!updatedPermissions.includes(permission.permissionName)) {
+            updatedPermissions.push(permission.permissionName);
+          }
+        } else {
+          updatedPermissions = updatedPermissions.filter(
+            (p) => p !== permission.permissionName,
+          );
         }
-    };
 
-    const handleAssignPermission = async (roleId, permissionId) => {
-        try {
-            await AdminApi.roles.assignPermission(roleId, permissionId);
-            onUpdate();
-            setSelectedRole(null);
-        } catch (err) {
-            alert("Error assigning permission: " + err.message);
-        }
-    };
+        return {
+          ...prev,
+          permissions: updatedPermissions,
+        };
+      });
 
-    const handleRemovePermission = async (roleId, permissionId) => {
-        try {
-            await AdminApi.roles.removePermission(roleId, permissionId);
-            onUpdate();
-            setSelectedRole(null);
-        } catch (err) {
-            alert("Error removing permission: " + err.message);
-        }
-    };
+      // Refresh backend data
+      await onUpdate();
+    } catch (err) {
+      alert("Error updating permission: " + err.message);
+    }
+  };
 
-    const roleListItems = roles.map(role =>
-        h("button",
+  const roleListItems = roles.map((role) =>
+    h(
+      "button",
+      {
+        key: role.id,
+        type: "button",
+        className: `list-group-item list-group-item-action ${
+          selectedRole?.id === role.id ? "active" : ""
+        }`,
+        onClick: () => setSelectedRole(role),
+      },
+
+      h(
+        "div",
+        {
+          className: "d-flex justify-content-between align-items-center",
+        },
+
+        h(
+          "div",
+          null,
+
+          h("h6", { className: "mb-0" }, role.roleName),
+
+          withPermission(
+            "permissions.view",
+
+            h("small", null, `${role.permissions?.length || 0} permissions`),
+          ),
+        ),
+
+        withPermission("roles.delete", h(
+            "button",
             {
-                key: role.id,
-                type: "button",
-                className: `list-group-item list-group-item-action ${selectedRole?.id === role.id ? "active" : ""}`,
-                onClick: () => setSelectedRole(role)
-            },
-            h("div", { className: "d-flex justify-content-between align-items-start" },
-                h("div", null,
-                    h("h6", { className: "mb-0" }, role.roleName),
-                    h("small", null, "Permissions: " + (role.permissions?.length || 0))
-                ),
-                h("button",
-                    {
-                        type: "button",
-                        className: "btn btn-sm btn-danger",
-                        onClick: (e) => {
-                            e.stopPropagation();
-                            handleDeleteRole(role.id);
-                        }
-                    },
-                    "Delete"
-                )
-            )
-        )
-    );
+              type: "button",
+              className: "btn btn-sm btn-danger",
 
-    const assignedPermItems = selectedRole && selectedRole.permissions && selectedRole.permissions.length > 0
-        ? h("div", null,
-            selectedRole.permissions.map((permName, idx) => {
-                const perm = permissions.find(p => p.permissionName === permName);
-                return h("span",
-                    { key: idx, className: "badge bg-info me-2" },
-                    permName,
-                    h("button",
-                        {
-                            type: "button",
-                            className: "btn-close btn-close-white ms-1",
-                            onClick: () => handleRemovePermission(selectedRole.id, perm?.id),
-                            style: { fontSize: "0.7rem" }
-                        }
-                    )
-                );
-            })
-        )
-        : h("span", { className: "text-muted" }, "No permissions assigned");
-
-    const availablePermItems = permissions.map(perm => {
-        const isAssigned = selectedRole?.permissions?.includes(perm.permissionName);
-        return h("button",
-            {
-                key: perm.id,
-                type: "button",
-                className: `list-group-item list-group-item-action ${isAssigned ? "active" : ""}`,
-                onClick: () => !isAssigned && handleAssignPermission(selectedRole.id, perm.id),
-                disabled: isAssigned
+              onClick: (e) => {
+                e.stopPropagation();
+                handleDeleteRole(role.id);
+              },
             },
-            h("div", { className: "d-flex justify-content-between" },
-                h("span", null, perm.permissionName),
-                isAssigned && h("span", { className: "badge bg-success" }, "Assigned")
-            )
-        );
+            "Delete",
+          ),
+        ),
+      ),
+    ),
+  );
+
+  const permissionCheckboxes =
+    selectedRole &&
+    permissions.map((permission) => {
+      const checked = selectedRole.permissions?.includes(
+        permission.permissionName,
+      );
+
+      return h(
+        "div",
+        {
+          key: permission.id,
+          className:
+            "form-check p-3 mb-2 rounded border d-flex align-items-center",
+        },
+
+        h("input", {
+          type: "checkbox",
+
+          className: "form-check-input me-3",
+
+          checked: checked,
+
+          disabled: !can("permissions.assign") && !can("permissions.remove"),
+
+          onChange: (e) => handlePermissionToggle(permission, e.target.checked),
+
+          style: {
+            width: "1.4rem",
+            height: "1.4rem",
+            marginLeft: "0.5rem",
+            cursor: "pointer",
+          },
+        }),
+
+        h(
+          "label",
+          {
+            className: "form-check-label ms-2 mb-0",
+            style: {
+              fontSize: "1rem",
+              cursor: "pointer",
+            },
+          },
+
+          permission.permissionName,
+        ),
+      );
     });
 
-    return h("div", null,
-        h("button",
-            {
-                className: "btn btn-primary mb-3",
-                onClick: () => setShowForm(!showForm)
-            },
-            showForm ? "Cancel" : "Add New Role"
-        ),
-        showForm && h("div", { className: "card mb-3" },
-            h("div", { className: "card-body" },
-                h("form", { onSubmit: handleAddRole },
-                    h("div", { className: "mb-3" },
-                        h("label", { className: "form-label" }, "Role Name"),
-                        h("input", {
-                            type: "text",
-                            className: "form-control",
-                            value: formData.name,
-                            onChange: (e) => setFormData({ name: e.target.value }),
-                            required: true
-                        })
-                    ),
-                    h("button", { type: "submit", className: "btn btn-success" }, "Create Role")
-                )
-            )
-        ),
-        h("div", { className: "row" },
-            h("div", { className: "col-md-6" },
-                h("h5", null, "Roles List"),
-                h("div", { className: "list-group" }, ...roleListItems)
+  return h("div", null,
+    withPermission("roles.create", h(
+        "button",
+        {
+          className: "btn btn-primary mb-3",
+          onClick: () => setShowForm(!showForm),
+        },
+        showForm ? "Cancel" : "Add New Role",
+      ),
+    ),
+
+    showForm &&
+      h("div", { className: "card mb-3" },
+
+        h( "div", { className: "card-body" },
+          h("form", { onSubmit: handleAddRole },
+            h( "div", { className: "mb-3" },
+              h("label", { className: "form-label" }, "Role Name"),
+              h("input", {
+                type: "text",
+                className: "form-control",
+                value: formData.name,
+                onChange: (e) =>
+                  setFormData({
+                    name: e.target.value,
+                  }),
+                required: true,
+              }),
             ),
-            selectedRole && h("div", { className: "col-md-6" },
-                h("h5", null, `Assign Permissions to ${selectedRole.roleName}`),
-                h("div", { className: "card" },
-                    h("div", { className: "card-body" },
-                        h("h6", null, "Current Permissions:"),
-                        h("div", { className: "mb-3" }, assignedPermItems),
-                        h("h6", null, "Available Permissions:"),
-                        h("div", { className: "list-group" }, ...availablePermItems)
-                    )
-                )
-            )
-        )
-    );
+
+            h(
+              "button",
+              {
+                type: "submit",
+                className: "btn btn-success",
+              },
+              "Create Role",
+            ),
+          ),
+        ),
+      ),
+
+    h( "div", { className: "row" },
+      h(
+        "div",
+        { className: "col-md-4" },
+        h("h5", null, "Roles"),
+        h(
+          "div",
+          { className: "list-group" },
+          ...roleListItems,
+        ),
+      ),
+
+      selectedRole &&
+        h(
+          "div",
+          { className: "col-md-8" },
+          h(
+            "div",
+            { className: "card" },
+            h(
+              "div",
+              { className: "card-body" },
+              h(
+                "h5",
+                { className: "mb-3" },
+                `${selectedRole.roleName} Permissions`,
+              ),
+
+              withPermission("permissions.view", h(
+                  "div",
+                  null,
+                  ...permissionCheckboxes,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ),
+  );
 }
 
 function PermissionsTab({ permissions, onUpdate, loading }) {
@@ -460,25 +605,25 @@ function PermissionsTab({ permissions, onUpdate, loading }) {
                 className: "list-group-item d-flex justify-content-between align-items-center"
             },
             h("span", null, perm.permissionName),
-            h("button",
+            withPermission("permissions.delete", h("button",
                 {
                     type: "button",
                     className: "btn btn-sm btn-danger",
                     onClick: () => handleDeletePermission(perm.id)
                 },
                 "Delete"
-            )
+            ))
         )
     );
 
     return h("div", null,
-        h("button",
+        withPermission("permissions.create", h("button",
             {
                 className: "btn btn-primary mb-3",
                 onClick: () => setShowForm(!showForm)
             },
             showForm ? "Cancel" : "Add New Permission"
-        ),
+        )),
         showForm && h("div", { className: "card mb-3" },
             h("div", { className: "card-body" },
                 h("form", { onSubmit: handleAddPermission },

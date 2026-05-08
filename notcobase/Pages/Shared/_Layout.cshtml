@@ -20,13 +20,13 @@
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">DashBoard</a>
+                            <a data-permission="tables.view" class="nav-link text-dark" asp-area="" asp-page="/Index">DashBoard</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Database</a>
+                            <a data-permission="tables.view" class="nav-link text-dark" asp-area="" asp-page="/Index">Database</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Users">User & Permissions</a>
+                            <a data-permission="users.view, roles.view, permissions.view" class="nav-link text-dark" asp-area="" asp-page="/Users">User & Permissions</a>
                         </li>
                     </ul>
                     <div id="auth-section" class="d-flex align-items-center gap-2"></div>
@@ -49,10 +49,54 @@
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        (function () {
-            const authSection =
-                document.getElementById("auth-section");
+        window.Auth = {
+            getToken() {
+                return localStorage.getItem("jwtToken");
+            },
 
+            getPayload() {
+                const token = this.getToken();
+
+                if (!token) {
+                    return null;
+                }
+
+                try {
+                    return JSON.parse(
+                        atob(token.split('.')[1])
+                    );
+                }
+                catch {
+                    return null;
+                }
+            },
+
+            getPermissions() {
+                const payload = this.getPayload();
+
+                if (!payload) {
+                    return [];
+                }
+
+                const permissions = payload.permission;
+
+                if (!permissions) {
+                    return [];
+                }
+
+                return Array.isArray(permissions)
+                    ? permissions
+                    : [permissions];
+            },
+
+            hasPermission(permission) {
+                return this.getPermissions()
+                    .includes(permission);
+            }
+        };
+
+        (function () {
+            const authSection = document.getElementById("auth-section");
             const token = localStorage.getItem("jwtToken");
 
             if (!token) {
@@ -66,15 +110,9 @@
             }
 
             try {
-                // Decode JWT payload
                 const payload = JSON.parse(
                     atob(token.split('.')[1])
                 );
-
-                const username =
-                    payload[
-                        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
-                    ] || "User";
 
                 const role =
                     payload[
@@ -107,7 +145,7 @@
             }
         })();
     </script>
-
+    <script src="~/js/site.js"></script>
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>

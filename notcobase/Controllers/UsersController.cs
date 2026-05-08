@@ -19,7 +19,7 @@ namespace notcobase.Controllers
             _context = context;
         }
 
-        [Permission("users.view")]
+        // [Permission("users.view")]
         [HttpGet]
         public async Task<IActionResult> GetUsers()
         {
@@ -40,7 +40,7 @@ namespace notcobase.Controllers
             return Ok(users);
         }
 
-        [Permission("users.view")]
+        // [Permission("users.view")]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetUser(int id)
         {

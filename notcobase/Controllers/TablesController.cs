@@ -21,7 +21,7 @@ public class TablesController : ControllerBase
 
     /// Get all tables
     [HttpGet]
-    [Permission("tables.view")]
+    // [Permission("tables.view")]
     public async Task<ActionResult<IEnumerable<TableDto>>> GetTables()
     {
         var tables = await _context.Tables
@@ -52,7 +52,7 @@ public class TablesController : ControllerBase
 
     /// Get a specific table by ID
     [HttpGet("{id}")]
-    [Permission("tables.view")]
+    // [Permission("tables.view")]
     public async Task<ActionResult<TableDetailsDto>> GetTable(int id)
     {
         var table = await _context.Tables

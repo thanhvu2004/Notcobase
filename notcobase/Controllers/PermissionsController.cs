@@ -20,7 +20,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet]
-        [Permission("permissions.view")]
+        // [Permission("permissions.view")]
         public async Task<IActionResult> GetPermissions()
         {
             var permissions = await _context.Permissions
@@ -35,7 +35,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet("{id}")]
-        [Permission("permissions.view")]
+        // [Permission("permissions.view")]
         public async Task<IActionResult> GetPermission(int id)
         {
             var permission = await _context.Permissions
