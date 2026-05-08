@@ -42,7 +42,11 @@ public class LoginModel : PageModel
         if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
         {
             ErrorMessage = "Username and password are required.";
-            return Page();
+            return new JsonResult(new
+            {
+                success = false,
+                message = "Username and password are required."
+            });
         }
 
         try
@@ -57,7 +61,11 @@ public class LoginModel : PageModel
             if (user == null)
             {
                 ErrorMessage = "Invalid username or password.";
-                return Page();
+                return new JsonResult(new
+                {
+                    success = false,
+                    message = "Invalid username or password."
+                });
             }
 
             bool validPassword = BCrypt.Net.BCrypt.Verify(password, user.PasswordHashed);
@@ -65,7 +73,11 @@ public class LoginModel : PageModel
             if (!validPassword)
             {
                 ErrorMessage = "Invalid username or password.";
-                return Page();
+                return new JsonResult(new
+                {
+                    success = false,
+                    message = "Invalid username or password."
+                });
             }
 
             var roles = user.UserRoles
@@ -81,21 +93,23 @@ public class LoginModel : PageModel
 
             var token = GenerateJwtToken(user, roles, permissions);
 
-            // Store JWT token in session
-            HttpContext.Session.SetString("JwtToken", token);
-            HttpContext.Session.SetString("Username", user.Username);
-            HttpContext.Session.SetString("UserRoles", string.Join(",", roles));
-            HttpContext.Session.SetString("UserPermissions", string.Join(",", permissions));
-
             // Redirect to admin page or home
-            return RedirectToPage("/Index");
+            return new JsonResult(new
+            {
+                success = true,
+                token = token
+            });
         }
         catch (Exception)
         {
             ErrorMessage = "An error occurred during login. Please try again.";
         }
 
-        return Page();
+        return new JsonResult(new
+        {
+            success = false,
+            message = "An error occurred during login."
+        });
     }
 
     public IActionResult OnGetLogout()

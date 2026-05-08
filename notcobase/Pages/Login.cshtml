@@ -43,5 +43,28 @@
     <script>
         // Auto-focus username field
         document.getElementById('username').focus();
+        document.querySelector("form")
+        .addEventListener("submit", async function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch("/Login", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // Store token
+                localStorage.setItem("jwtToken", data.token);
+                // Optional compatibility
+                window.jwtToken = data.token;
+                // Redirect
+                window.location.href = "/";
+            }
+
+            else {
+                alert(data.message || "Login failed");
+            }
+        });
     </script>
 }

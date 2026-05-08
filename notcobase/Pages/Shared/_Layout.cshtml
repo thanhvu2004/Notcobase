@@ -29,17 +29,7 @@
                             <a class="nav-link text-dark" asp-area="" asp-page="/Users">User & Permissions</a>
                         </li>
                     </ul>
-                    <div class="d-flex align-items-center gap-2">
-                        @{
-                            var username = Context.Session.GetString("Username");
-                            var roles = Context.Session.GetString("UserRoles")?.Split(',') ?? new string[0];
-                        }
-                        @if (!string.IsNullOrEmpty(username))
-                        {
-                            <span class="badge bg-primary">@(roles.Length > 0 ? roles[0] : "User")</span>
-                            <a href="/Login?handler=Logout" class="btn btn-outline-danger btn-sm">Logout</a>
-                        }
-                    </div>
+                    <div id="auth-section" class="d-flex align-items-center gap-2"></div>
                 </div>
             </div>
         </nav>
@@ -58,7 +48,66 @@
 
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        (function () {
+            const authSection =
+                document.getElementById("auth-section");
+
+            const token = localStorage.getItem("jwtToken");
+
+            if (!token) {
+                authSection.innerHTML = `
+                    <a href="/Login"
+                    class="btn btn-outline-primary btn-sm">
+                        Login
+                    </a>
+                `;
+                return;
+            }
+
+            try {
+                // Decode JWT payload
+                const payload = JSON.parse(
+                    atob(token.split('.')[1])
+                );
+
+                const username =
+                    payload[
+                        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+                    ] || "User";
+
+                const role =
+                    payload[
+                        "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+                    ] || "User";
+
+                authSection.innerHTML = `
+                    <span class="badge bg-primary">
+                        ${role}
+                    </span>
+
+                    <button
+                        class="btn btn-outline-danger btn-sm"
+                        id="logout-btn">
+                        Logout
+                    </button>
+                `;
+
+                document
+                    .getElementById("logout-btn")
+                    .addEventListener("click", function () {
+                        localStorage.removeItem("jwtToken");
+                        window.location.href = "/Login";
+                    });
+
+            } catch (err) {
+                console.error("Invalid JWT", err);
+                localStorage.removeItem("jwtToken");
+                window.location.href = "/Login";
+            }
+        })();
+    </script>
+
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>

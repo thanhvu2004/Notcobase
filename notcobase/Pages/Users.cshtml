@@ -8,8 +8,11 @@
 
 @section Scripts {
     <script>
-        // Set JWT token for API client
-        window.jwtToken = '@Model.JwtToken';
+        const token = localStorage.getItem("jwtToken");
+
+        if (!token) {
+            window.location.href = "/Login";
+        }
     </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>

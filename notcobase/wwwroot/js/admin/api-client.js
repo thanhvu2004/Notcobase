@@ -6,8 +6,9 @@ const AdminApi = {
         };
 
         // Add JWT token if available
-        if (window.jwtToken) {
-            options.headers["Authorization"] = `Bearer ${window.jwtToken}`;
+        const token = localStorage.getItem("jwtToken");
+        if (token) {
+            options.headers["Authorization"] = `Bearer ${token}`;
         }
 
         if (body) options.body = JSON.stringify(body);
