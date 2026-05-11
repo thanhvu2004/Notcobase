@@ -32,7 +32,7 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
     h(
       "div",
       { className: "d-flex gap-2" },
-      withPermission("edit-table",
+      withPermission("tables.edit",
       h(
         "button",
         {
@@ -41,7 +41,7 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
         },
         "Edit table",
       )),
-      withPermission("delete-table", h(
+      withPermission("tables.delete", h(
         "button",
         {
           className: "btn btn-outline-danger btn-sm",
@@ -49,7 +49,7 @@ function TableHeader({ activeTable, onEdit, onDelete, onAddRecord, disableAddRec
         },
         "Delete table",
       )),
-      withPermission("create-record", h(
+      withPermission("records.create", h(
         "button",
         {
           className: "btn btn-success btn-sm",
