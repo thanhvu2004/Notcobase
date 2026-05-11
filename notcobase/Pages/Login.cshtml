@@ -1,0 +1,86 @@
+@page
+@model notcobase.Pages.LoginModel
+@{
+    ViewData["Title"] = "Login";
+}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Login to Notcobase</h3>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @Model.ErrorMessage
+                        </div>
+                    }
+
+                    <form method="post">
+                        @Html.AntiForgeryToken()
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="Username" placeholder="Username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <div class="input-group mb-3">
+                                <input type="password" class="form-control" id="password" name="Password" placeholder="Password" required>
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                    <i class="bi bi-eye" id="toggleIcon"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Auto-focus username field
+        document.getElementById('username').focus();
+        document.querySelector("form")
+        .addEventListener("submit", async function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch("/Login", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // Store token
+                localStorage.setItem("jwtToken", data.token);
+                // Optional compatibility
+                window.jwtToken = data.token;
+                // Redirect
+                window.location.href = "/";
+            }
+
+            else {
+                alert(data.message || "Login failed");
+            }
+        });
+        // Toggle password visibility
+        document.querySelector('#togglePassword').addEventListener('click', function () {
+            const password = document.querySelector('#password');
+            const toggleIcon = document.querySelector('#toggleIcon');
+            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+            password.setAttribute('type', type);
+            
+            // Toggle icons
+            toggleIcon.classList.toggle('bi-eye-fill');
+            toggleIcon.classList.toggle('bi-eye-slash-fill');
+        });
+    </script>
+}

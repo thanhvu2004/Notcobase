@@ -1,8 +1,6 @@
 namespace notcobase.Models;
 
-/// <summary>
 /// Represents a record (row) in a table
-/// </summary>
 public class Record
 {
     public int Id { get; set; }

@@ -1,8 +1,6 @@
 namespace notcobase.Models;
 
-/// <summary>
 /// Represents a database table in the system
-/// </summary>
 public class Table
 {
     public int Id { get; set; }

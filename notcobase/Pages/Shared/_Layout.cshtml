@@ -12,7 +12,7 @@
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container">
-                <a class="navbar-brand" asp-area="" asp-page="/Index">notcobase</a>
+                <a class="navbar-brand" asp-area="" asp-page="/Index"><b>Not</b>cobase</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -20,9 +20,16 @@
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Database</a>
+                            <a data-permission="tables.view" class="nav-link text-dark" asp-area="" asp-page="/Index">DashBoard</a>
+                        </li>
+                        <li class="nav-item">
+                            <a data-permission="tables.view" class="nav-link text-dark" asp-area="" asp-page="/Index">Database</a>
+                        </li>
+                        <li class="nav-item">
+                            <a data-permission="users.view, roles.view, permissions.view" class="nav-link text-dark" asp-area="" asp-page="/Users">User & Permissions</a>
                         </li>
                     </ul>
+                    <div id="auth-section" class="d-flex align-items-center gap-2"></div>
                 </div>
             </div>
         </nav>
@@ -41,7 +48,104 @@
 
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        window.Auth = {
+            getToken() {
+                return localStorage.getItem("jwtToken");
+            },
+
+            getPayload() {
+                const token = this.getToken();
+
+                if (!token) {
+                    return null;
+                }
+
+                try {
+                    return JSON.parse(
+                        atob(token.split('.')[1])
+                    );
+                }
+                catch {
+                    return null;
+                }
+            },
+
+            getPermissions() {
+                const payload = this.getPayload();
+
+                if (!payload) {
+                    return [];
+                }
+
+                const permissions = payload.permission;
+
+                if (!permissions) {
+                    return [];
+                }
+
+                return Array.isArray(permissions)
+                    ? permissions
+                    : [permissions];
+            },
+
+            hasPermission(permission) {
+                return this.getPermissions()
+                    .includes(permission);
+            }
+        };
+
+        (function () {
+            const authSection = document.getElementById("auth-section");
+            const token = localStorage.getItem("jwtToken");
+
+            if (!token) {
+                authSection.innerHTML = `
+                    <a href="/Login"
+                    class="btn btn-outline-primary btn-sm">
+                        Login
+                    </a>
+                `;
+                return;
+            }
+
+            try {
+                const payload = JSON.parse(
+                    atob(token.split('.')[1])
+                );
+
+                const role =
+                    payload[
+                        "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+                    ] || "User";
+
+                authSection.innerHTML = `
+                    <span class="badge bg-primary">
+                        ${role}
+                    </span>
+
+                    <button
+                        class="btn btn-outline-danger btn-sm"
+                        id="logout-btn">
+                        Logout
+                    </button>
+                `;
+
+                document
+                    .getElementById("logout-btn")
+                    .addEventListener("click", function () {
+                        localStorage.removeItem("jwtToken");
+                        window.location.href = "/Login";
+                    });
+
+            } catch (err) {
+                console.error("Invalid JWT", err);
+                localStorage.removeItem("jwtToken");
+                window.location.href = "/Login";
+            }
+        })();
+    </script>
+    <script src="~/js/site.js"></script>
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>

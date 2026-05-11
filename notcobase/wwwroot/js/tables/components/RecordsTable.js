@@ -2,6 +2,18 @@
 const h = React.createElement;
 const { formatRecordValue } = app;
 
+function can(permission) {
+  if (!permission) {
+    return true;
+  }
+
+  return window.Auth?.hasPermission(permission);
+}
+
+function withPermission(permission, component) {
+  return can(permission) ? component : null;
+}
+
 function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
   return h(
     "div",
@@ -50,15 +62,15 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                     ),
                     h(
                       "td",
-                      { className: "text-end" },
-                      h(
+                      { className: "text-center" },
+                      withPermission("delete-record", h(
                         "button",
                         {
                           className: "btn btn-sm btn-outline-danger",
                           onClick: () => onDeleteRecord(record),
                         },
                         "Delete",
-                      ),
+                      )),
                     ),
                   ),
                 ),

@@ -2,15 +2,27 @@
 const h = React.createElement;
 const { FIELD_TYPES } = app;
 
+function can(permission) {
+  if (!permission) {
+    return true;
+  }
+
+  return window.Auth?.hasPermission(permission);
+}
+
+function withPermission(permission, component) {
+  return can(permission) ? component : null;
+}
+
 function FieldsList({ columns, fieldForm, onFieldFormChange, onAddField, onEditField, onDeleteField, saving }) {
-  return h(
+  return withPermission("columns.view", h(
     "div",
     { className: "col-xl-5" },
     h(
       "div",
       { className: "border rounded p-3 h-100" },
       h("h3", { className: "h6 mb-3" }, "Fields"),
-      h(
+      withPermission("columns.create", h(
         "form",
         { className: "row g-2 mb-3", onSubmit: onAddField },
         h(
@@ -52,7 +64,7 @@ function FieldsList({ columns, fieldForm, onFieldFormChange, onAddField, onEditF
           }),
           " Required",
         ),
-      ),
+      )),
       columns.length === 0
         ? h("div", { className: "text-muted small" }, "Add fields before creating records.")
         : h(
@@ -80,30 +92,30 @@ function FieldsList({ columns, fieldForm, onFieldFormChange, onAddField, onEditF
                         "Inherited fields must be changed on the parent table"
                       )
                     : [
-                        h(
+                        withPermission("columns.edit", h(
                           "button",
                           {
                             className: "btn btn-sm btn-outline-secondary",
                             onClick: () => onEditField(column),
                           },
                           "Edit"
-                        ),
+                        )),
 
-                        h(
+                        withPermission("columns.delete", h(
                           "button",
                           {
                             className: "btn btn-sm btn-outline-danger",
                             onClick: () => onDeleteField(column),
                           },
                           "Delete"
-                        ),
+                        )),
                       ]
                 ),
               ),
             ),
           ),
     ),
-  );
+  ));
 }
 
 app.FieldsList = FieldsList;
