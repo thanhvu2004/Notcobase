@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
-using System.Text.Json;
+using notcobase.Services;
 
 namespace notcobase.Controllers;
 
@@ -14,10 +14,14 @@ namespace notcobase.Controllers;
 public class ColumnsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly DynamicTableService _dynamicTableService;
+    private readonly ILogger<ColumnsController> _logger;
 
-    public ColumnsController(AppDbContext context)
+    public ColumnsController(AppDbContext context, DynamicTableService dynamicTableService, ILogger<ColumnsController> logger)
     {
         _context = context;
+        _dynamicTableService = dynamicTableService;
+        _logger = logger;
     }
 
     /// Get all columns for a table
@@ -95,6 +99,34 @@ public class ColumnsController : ControllerBase
         _context.Columns.Add(column);
         await _context.SaveChangesAsync();
 
+        // If this is the first column and the table doesn't have a physical table yet, create it
+        if (!table.PhysicalTableCreated && table.Columns.Count == 1)
+        {
+            try
+            {
+                await _dynamicTableService.CreatePhysicalTableAsync(tableId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error creating physical table for table ID {tableId}");
+                // Don't fail the request, but log the error
+                // The user can retry creating records later
+            }
+        }
+        // If physical table already exists, add this column to it
+        else if (table.PhysicalTableCreated)
+        {
+            try
+            {
+                await _dynamicTableService.AddColumnAsync(column);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error adding column to physical table for table ID {tableId}");
+                return StatusCode(500, "Error adding column to physical table");
+            }
+        }
+
         return CreatedAtAction(nameof(GetColumns), new { tableId }, new ColumnResponseDto
         {
             Id = column.Id,
@@ -154,29 +186,12 @@ public class ColumnsController : ControllerBase
         if (dto.IsRequired.HasValue)
             column.IsRequired = dto.IsRequired.Value;
 
-        if (nameChanged)
-        {
-            var records = await _context.Records
-                .Where(r => r.TableId == tableId)
-                .ToListAsync();
-
-            foreach (var record in records)
-            {
-                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(record.Data) ?? new();
-                if (!data.TryGetValue(oldName, out var value))
-                    continue;
-
-                if (!data.ContainsKey(newName!))
-                    data[newName!] = value;
-
-                data.Remove(oldName);
-                record.Data = JsonSerializer.Serialize(data);
-                record.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
+
+        // Note: Renaming columns in physical table would require more complex ALTER TABLE logic
+        // For now, we're not syncing column renames to the physical table
+        // Users would need to recreate the column if needed
 
         return NoContent();
     }
@@ -192,8 +207,26 @@ public class ColumnsController : ControllerBase
         if (column == null)
             return NotFound();
 
+        var table = await _context.Tables.FindAsync(tableId);
+        if (table == null)
+            return NotFound();
+
         _context.Columns.Remove(column);
         await _context.SaveChangesAsync();
+
+        // Drop the column from physical table if it exists
+        if (table.PhysicalTableCreated)
+        {
+            try
+            {
+                await _dynamicTableService.DropColumnAsync(tableId, column.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error dropping column from physical table for table ID {tableId}");
+                // Don't fail the request, column is already deleted from metadata
+            }
+        }
 
         return NoContent();
     }

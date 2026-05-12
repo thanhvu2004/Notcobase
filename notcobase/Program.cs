@@ -30,6 +30,9 @@ builder.Services.AddHttpClient();
 // Database Seeder
 builder.Services.AddScoped<notcobase.Services.DatabaseSeeder>();
 
+// Dynamic Table Service
+builder.Services.AddScoped<notcobase.Services.DynamicTableService>();
+
 // CORS
 builder.Services.AddCors(options =>
 {

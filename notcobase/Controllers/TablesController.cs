@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
+using notcobase.Services;
 
 namespace notcobase.Controllers;
 
@@ -13,10 +14,14 @@ namespace notcobase.Controllers;
 public class TablesController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly DynamicTableService _dynamicTableService;
+    private readonly ILogger<TablesController> _logger;
 
-    public TablesController(AppDbContext context)
+    public TablesController(AppDbContext context, DynamicTableService dynamicTableService, ILogger<TablesController> logger)
     {
         _context = context;
+        _dynamicTableService = dynamicTableService;
+        _logger = logger;
     }
 
     /// Get all tables
@@ -26,7 +31,6 @@ public class TablesController : ControllerBase
     {
         var tables = await _context.Tables
             .Include(t => t.Columns)
-            .Include(t => t.Records)
             .Include(t => t.ParentTable)
             .AsNoTracking()
             .ToListAsync();
@@ -41,7 +45,7 @@ public class TablesController : ControllerBase
                 ParentTableId = t.ParentTableId,
                 ParentTableName = t.ParentTable?.Name,
                 ColumnCount = GetEffectiveColumns(t, tableMap).Count,
-                RecordCount = t.Records.Count,
+                PhysicalTableCreated = t.PhysicalTableCreated,
                 CreatedAt = t.CreatedAt,
                 UpdatedAt = t.UpdatedAt
             })
@@ -57,7 +61,6 @@ public class TablesController : ControllerBase
     {
         var table = await _context.Tables
             .Include(t => t.Columns)
-            .Include(t => t.Records)
             .Include(t => t.ParentTable)
             .FirstOrDefaultAsync(t => t.Id == id);
 
@@ -86,7 +89,7 @@ public class TablesController : ControllerBase
                 TableId = c.TableId,
                 IsInherited = c.TableId != table.Id
             }).ToList(),
-            RecordCount = table.Records.Count,
+            PhysicalTableCreated = table.PhysicalTableCreated,
             CreatedAt = table.CreatedAt,
             UpdatedAt = table.UpdatedAt
         };
@@ -142,7 +145,7 @@ public class TablesController : ControllerBase
             ColumnCount = tableMap.TryGetValue(table.Id, out var savedTable)
                 ? GetEffectiveColumns(savedTable, tableMap).Count
                 : 0,
-            RecordCount = 0,
+            PhysicalTableCreated = table.PhysicalTableCreated,
             CreatedAt = table.CreatedAt,
             UpdatedAt = table.UpdatedAt
         });
@@ -202,6 +205,20 @@ public class TablesController : ControllerBase
 
         if (await _context.Tables.AnyAsync(t => t.ParentTableId == id))
             return BadRequest("Cannot delete a table while other tables inherit from it");
+
+        // Drop the physical table if it exists
+        if (table.PhysicalTableCreated)
+        {
+            try
+            {
+                await _dynamicTableService.DropPhysicalTableAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error dropping physical table for table ID {id}");
+                return StatusCode(500, "Error deleting physical table");
+            }
+        }
 
         _context.Tables.Remove(table);
         await _context.SaveChangesAsync();
@@ -274,7 +291,7 @@ public class TableDto
     public int? ParentTableId { get; set; }
     public string? ParentTableName { get; set; }
     public int ColumnCount { get; set; }
-    public int RecordCount { get; set; }
+    public bool PhysicalTableCreated { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -288,7 +305,7 @@ public class TableDetailsDto
     public int? ParentTableId { get; set; }
     public string? ParentTableName { get; set; }
     public List<ColumnDto> Columns { get; set; } = new();
-    public int RecordCount { get; set; }
+    public bool PhysicalTableCreated { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

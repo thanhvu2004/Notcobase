@@ -233,7 +233,24 @@ function TablesApp() {
     if (!selectedTableId || columnState.columns.length === 0) return;
 
     const data = columnState.columns.reduce((values, column) => {
-      values[column.name] = coerceRecordValue(recordState.recordForm[column.name], column.fieldType);
+      const rawValue = recordState.recordForm[column.name];
+      const coercedValue = coerceRecordValue(rawValue, column.fieldType);
+
+      // Skip undefined or empty optional values
+      if (
+        coercedValue === undefined ||
+        coercedValue === null ||
+        (typeof coercedValue === "string" && coercedValue.trim() === "")
+      ) {
+        // Still allow required fields to pass through
+        if (column.isRequired) {
+          values[column.name] = coercedValue;
+        }
+
+        return values;
+      }
+
+      values[column.name] = coercedValue;
       return values;
     }, {});
 

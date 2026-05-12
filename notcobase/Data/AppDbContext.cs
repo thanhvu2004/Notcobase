@@ -11,7 +11,6 @@ public class AppDbContext : DbContext
 
     public DbSet<Table> Tables { get; set; }
     public DbSet<Column> Columns { get; set; }
-    public DbSet<Record> Records { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<Role> Roles { get; set; }
     public DbSet<UserRole> UserRoles { get; set; }
@@ -28,12 +27,6 @@ public class AppDbContext : DbContext
             .WithMany(t => t.ChildTables)
             .HasForeignKey(t => t.ParentTableId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        modelBuilder.Entity<Table>()
-            .HasMany(t => t.Records)
-            .WithOne(r => r.Table)
-            .HasForeignKey(r => r.TableId)
-            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<Table>()
             .HasMany(t => t.Columns)
