@@ -27,7 +27,7 @@ public class RecordsController : ControllerBase
 
     /// Get all records from a table
     [HttpGet]
-    // [Permission("records.view")]
+    [Permission("records.view")]
     public async Task<ActionResult<IEnumerable<RecordDto>>> GetRecords(int tableId, [FromQuery] int? skip = 0, [FromQuery] int? limit = 100)
     {
         // Verify table exists and physical table is created
@@ -82,7 +82,7 @@ public class RecordsController : ControllerBase
 
     /// Get a specific record
     [HttpGet("{recordId}")]
-    // [Permission("records.view")]
+    [Permission("records.view")]
     public async Task<ActionResult<RecordDto>> GetRecord(int tableId, int recordId)
     {
         var table = await _context.Tables

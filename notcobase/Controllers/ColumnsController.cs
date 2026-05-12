@@ -189,9 +189,30 @@ public class ColumnsController : ControllerBase
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
 
-        // Note: Renaming columns in physical table would require more complex ALTER TABLE logic
-        // For now, we're not syncing column renames to the physical table
-        // Users would need to recreate the column if needed
+
+        // Sync physical table changes
+        var tablePhys = await _context.Tables.FindAsync(tableId);
+
+        if (tablePhys != null && tablePhys.PhysicalTableCreated)
+        {
+            try
+            {
+                // Handle column rename
+                if (nameChanged)
+                {
+                    var physicalTableName = $"tbl_{tableId}";
+
+                    await _context.Database.ExecuteSqlRawAsync($@"
+                        ALTER TABLE [{physicalTableName}]
+                        RENAME COLUMN [{oldName}] TO [{column.Name}]");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating physical column for table ID {tableId}");
+                return StatusCode(500, "Error updating physical table column");
+            }
+        }
 
         return NoContent();
     }
