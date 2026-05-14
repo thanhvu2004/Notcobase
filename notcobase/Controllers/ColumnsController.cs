@@ -99,8 +99,10 @@ public class ColumnsController : ControllerBase
         _context.Columns.Add(column);
         await _context.SaveChangesAsync();
 
+        var columnCount = await _context.Columns.CountAsync(c => c.TableId == tableId);
+
         // If this is the first column and the table doesn't have a physical table yet, create it
-        if (!table.PhysicalTableCreated && table.Columns.Count == 1)
+        if (!table.PhysicalTableCreated && columnCount == 1)
         {
             try
             {
@@ -113,18 +115,16 @@ public class ColumnsController : ControllerBase
                 // The user can retry creating records later
             }
         }
-        // If physical table already exists, add this column to it
-        else if (table.PhysicalTableCreated)
+
+        // Sync the new column to the owning table and any existing child physical tables.
+        try
         {
-            try
-            {
-                await _dynamicTableService.AddColumnAsync(column);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error adding column to physical table for table ID {tableId}");
-                return StatusCode(500, "Error adding column to physical table");
-            }
+            await _dynamicTableService.AddColumnToTableAndDescendantsAsync(column);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error adding column to physical tables for table ID {tableId}");
+            return StatusCode(500, "Error adding column to physical tables");
         }
 
         return CreatedAtAction(nameof(GetColumns), new { tableId }, new ColumnResponseDto
@@ -186,33 +186,18 @@ public class ColumnsController : ControllerBase
         if (dto.IsRequired.HasValue)
             column.IsRequired = dto.IsRequired.Value;
 
+        try
+        {
+            await _dynamicTableService.UpdateColumnInTableAndDescendantsAsync(column, oldName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error updating physical columns for table ID {tableId}");
+            return StatusCode(500, "Error updating physical table columns");
+        }
+
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
-
-
-        // Sync physical table changes
-        var tablePhys = await _context.Tables.FindAsync(tableId);
-
-        if (tablePhys != null && tablePhys.PhysicalTableCreated)
-        {
-            try
-            {
-                // Handle column rename
-                if (nameChanged)
-                {
-                    var physicalTableName = $"tbl_{tableId}";
-
-                    await _context.Database.ExecuteSqlRawAsync($@"
-                        ALTER TABLE [{physicalTableName}]
-                        RENAME COLUMN [{oldName}] TO [{column.Name}]");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error updating physical column for table ID {tableId}");
-                return StatusCode(500, "Error updating physical table column");
-            }
-        }
 
         return NoContent();
     }
@@ -232,22 +217,18 @@ public class ColumnsController : ControllerBase
         if (table == null)
             return NotFound();
 
+        try
+        {
+            await _dynamicTableService.DropColumnFromTableAndDescendantsAsync(column);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error dropping column from physical tables for table ID {tableId}");
+            return StatusCode(500, "Error dropping column from physical tables");
+        }
+
         _context.Columns.Remove(column);
         await _context.SaveChangesAsync();
-
-        // Drop the column from physical table if it exists
-        if (table.PhysicalTableCreated)
-        {
-            try
-            {
-                await _dynamicTableService.DropColumnAsync(tableId, column.Name);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error dropping column from physical table for table ID {tableId}");
-                // Don't fail the request, column is already deleted from metadata
-            }
-        }
 
         return NoContent();
     }

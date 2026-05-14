@@ -32,7 +32,6 @@ public class RecordsController : ControllerBase
     {
         // Verify table exists and physical table is created
         var table = await _context.Tables
-            .Include(t => t.Columns)
             .FirstOrDefaultAsync(t => t.Id == tableId);
 
         if (table == null)
@@ -47,10 +46,11 @@ public class RecordsController : ControllerBase
             var limitValue = limit ?? 100;
 
             var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
-            var columnList = string.Join(", ", table.Columns.Select(c => $"[{c.Name}]"));
+            var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
+            var columnList = BuildSelectColumnList(columns);
 
             var sql = $@"
-                SELECT Id, {columnList}, CreatedAt, UpdatedAt
+                SELECT Id{columnList}, CreatedAt, UpdatedAt
                 FROM [{physicalTableName}]
                 ORDER BY CreatedAt DESC
                 LIMIT {limitValue} OFFSET {skipValue}";
@@ -66,7 +66,7 @@ public class RecordsController : ControllerBase
                     var dtos = new List<RecordDto>();
                     while (await reader.ReadAsync())
                     {
-                        var dto = ReadRecordDto(reader, table.Columns);
+                        var dto = ReadRecordDto(reader);
                         dtos.Add(dto);
                     }
                     return Ok(dtos);
@@ -86,7 +86,6 @@ public class RecordsController : ControllerBase
     public async Task<ActionResult<RecordDto>> GetRecord(int tableId, int recordId)
     {
         var table = await _context.Tables
-            .Include(t => t.Columns)
             .FirstOrDefaultAsync(t => t.Id == tableId);
 
         if (table == null)
@@ -98,10 +97,11 @@ public class RecordsController : ControllerBase
         try
         {
             var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
-            var columnList = string.Join(", ", table.Columns.Select(c => $"[{c.Name}]"));
+            var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
+            var columnList = BuildSelectColumnList(columns);
 
             var sql = $@"
-                SELECT Id, {columnList}, CreatedAt, UpdatedAt
+                SELECT Id{columnList}, CreatedAt, UpdatedAt
                 FROM [{physicalTableName}]
                 WHERE Id = {recordId}";
 
@@ -115,7 +115,7 @@ public class RecordsController : ControllerBase
                 {
                     if (await reader.ReadAsync())
                     {
-                        var dto = ReadRecordDto(reader, table.Columns);
+                        var dto = ReadRecordDto(reader);
                         return Ok(dto);
                     }
                     return NotFound("Record not found");
@@ -135,7 +135,6 @@ public class RecordsController : ControllerBase
     public async Task<ActionResult<RecordDto>> CreateRecord(int tableId, [FromBody] CreateRecordDto dto)
     {
         var table = await _context.Tables
-            .Include(t => t.Columns)
             .FirstOrDefaultAsync(t => t.Id == tableId);
 
         if (table == null)
@@ -144,16 +143,20 @@ public class RecordsController : ControllerBase
         if (!table.PhysicalTableCreated)
             return BadRequest("Physical table has not been created yet. Please add columns first.");
 
-        // Validate data against columns
-        var validationResult = ValidateRecordData(dto.Data, table.Columns);
+        var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
+        var validationResult = ValidateRecordData(dto.Data, columns, requireMissingRequiredFields: true);
         if (!validationResult.IsValid)
             return BadRequest(validationResult.ErrorMessage);
 
         try
         {
             var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var columnNamesSet = columns
+                .Select(c => c.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var validData = dto.Data
+                .Where(kvp => columnNamesSet.Contains(kvp.Key))
                 .Where(kvp => kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
@@ -212,7 +215,6 @@ public class RecordsController : ControllerBase
     public async Task<IActionResult> UpdateRecord(int tableId, int recordId, [FromBody] UpdateRecordDto dto)
     {
         var table = await _context.Tables
-            .Include(t => t.Columns)
             .FirstOrDefaultAsync(t => t.Id == tableId);
 
         if (table == null)
@@ -221,19 +223,27 @@ public class RecordsController : ControllerBase
         if (!table.PhysicalTableCreated)
             return BadRequest("Physical table does not exist");
 
-        // Validate data against columns
-        var validationResult = ValidateRecordData(dto.Data, table.Columns);
+        var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
+        var validationResult = ValidateRecordData(dto.Data, columns, requireMissingRequiredFields: false);
         if (!validationResult.IsValid)
             return BadRequest(validationResult.ErrorMessage);
 
         try
         {
             var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
-            var setClause = string.Join(", ", dto.Data.Select(kvp => $"[{kvp.Key}] = {FormatSqlValue(kvp.Value)}"));
+            var columnNamesSet = columns
+                .Select(c => c.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var validData = dto.Data
+                .Where(kvp => columnNamesSet.Contains(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var setClause = validData.Count == 0
+                ? "UpdatedAt = CURRENT_TIMESTAMP"
+                : $"{string.Join(", ", validData.Select(kvp => $"[{kvp.Key}] = {FormatSqlValue(kvp.Value)}"))}, UpdatedAt = CURRENT_TIMESTAMP";
 
             var sql = $@"
                 UPDATE [{physicalTableName}]
-                SET {setClause}, UpdatedAt = CURRENT_TIMESTAMP
+                SET {setClause}
                 WHERE Id = {recordId}";
 
             var connection = _context.Database.GetDbConnection();
@@ -329,7 +339,13 @@ public class RecordsController : ControllerBase
     }
 
     // Helper methods
-    private RecordDto ReadRecordDto(System.Data.IDataReader reader, ICollection<Column> columns)
+    private static string BuildSelectColumnList(IEnumerable<Column> columns)
+    {
+        var columnList = string.Join(", ", columns.Select(c => $"[{c.Name}]"));
+        return string.IsNullOrWhiteSpace(columnList) ? string.Empty : $", {columnList}";
+    }
+
+    private RecordDto ReadRecordDto(System.Data.IDataReader reader)
     {
         var data = new Dictionary<string, object>();
         var id = reader.GetInt32(0);
@@ -352,16 +368,37 @@ public class RecordsController : ControllerBase
         };
     }
 
-    private (bool IsValid, string ErrorMessage) ValidateRecordData(Dictionary<string, object> data, ICollection<Column> columns)
+    private (bool IsValid, string ErrorMessage) ValidateRecordData(
+        Dictionary<string, object> data,
+        IEnumerable<Column> columns,
+        bool requireMissingRequiredFields)
     {
+        var columnList = columns.ToList();
+
         foreach (var kvp in data)
         {
-            var column = columns.FirstOrDefault(c => string.Equals(c.Name, kvp.Key, StringComparison.OrdinalIgnoreCase));
+            var column = columnList.FirstOrDefault(c => string.Equals(c.Name, kvp.Key, StringComparison.OrdinalIgnoreCase));
             if (column == null)
                 return (false, $"Column '{kvp.Key}' does not exist on this table");
 
             if (column.IsRequired && (kvp.Value == null || string.IsNullOrWhiteSpace(kvp.Value.ToString())))
                 return (false, $"Column '{kvp.Key}' is required");
+        }
+
+        if (requireMissingRequiredFields)
+        {
+            foreach (var column in columnList.Where(c => c.IsRequired))
+            {
+                var suppliedValue = data
+                    .FirstOrDefault(kvp => string.Equals(kvp.Key, column.Name, StringComparison.OrdinalIgnoreCase))
+                    .Value;
+
+                if (suppliedValue == null ||
+                    string.IsNullOrWhiteSpace(suppliedValue.ToString()))
+                {
+                    return (false, $"Column '{column.Name}' is required");
+                }
+            }
         }
 
         return (true, "");

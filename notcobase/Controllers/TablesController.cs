@@ -134,6 +134,21 @@ public class TablesController : ControllerBase
             .AsNoTracking()
             .ToDictionaryAsync(t => t.Id);
 
+        if (tableMap.TryGetValue(table.Id, out var savedTableForCreation) &&
+            GetEffectiveColumns(savedTableForCreation, tableMap).Any())
+        {
+            try
+            {
+                await _dynamicTableService.CreatePhysicalTableAsync(table.Id);
+                table.PhysicalTableCreated = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error creating inherited physical table for table ID {table.Id}");
+                return StatusCode(500, "Error creating inherited physical table");
+            }
+        }
+
         return CreatedAtAction(nameof(GetTable), new { id = table.Id }, new TableDto
         {
             Id = table.Id,
