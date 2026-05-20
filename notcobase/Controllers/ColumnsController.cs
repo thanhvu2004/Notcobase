@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
-using System.Text.Json;
+using notcobase.Services;
 
 namespace notcobase.Controllers;
 
@@ -14,10 +14,14 @@ namespace notcobase.Controllers;
 public class ColumnsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly DynamicTableService _dynamicTableService;
+    private readonly ILogger<ColumnsController> _logger;
 
-    public ColumnsController(AppDbContext context)
+    public ColumnsController(AppDbContext context, DynamicTableService dynamicTableService, ILogger<ColumnsController> logger)
     {
         _context = context;
+        _dynamicTableService = dynamicTableService;
+        _logger = logger;
     }
 
     /// Get all columns for a table
@@ -95,6 +99,34 @@ public class ColumnsController : ControllerBase
         _context.Columns.Add(column);
         await _context.SaveChangesAsync();
 
+        var columnCount = await _context.Columns.CountAsync(c => c.TableId == tableId);
+
+        // If this is the first column and the table doesn't have a physical table yet, create it
+        if (!table.PhysicalTableCreated && columnCount == 1)
+        {
+            try
+            {
+                await _dynamicTableService.CreatePhysicalTableAsync(tableId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error creating physical table for table ID {tableId}");
+                // Don't fail the request, but log the error
+                // The user can retry creating records later
+            }
+        }
+
+        // Sync the new column to the owning table and any existing child physical tables.
+        try
+        {
+            await _dynamicTableService.AddColumnToTableAndDescendantsAsync(column);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error adding column to physical tables for table ID {tableId}");
+            return StatusCode(500, "Error adding column to physical tables");
+        }
+
         return CreatedAtAction(nameof(GetColumns), new { tableId }, new ColumnResponseDto
         {
             Id = column.Id,
@@ -154,25 +186,14 @@ public class ColumnsController : ControllerBase
         if (dto.IsRequired.HasValue)
             column.IsRequired = dto.IsRequired.Value;
 
-        if (nameChanged)
+        try
         {
-            var records = await _context.Records
-                .Where(r => r.TableId == tableId)
-                .ToListAsync();
-
-            foreach (var record in records)
-            {
-                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(record.Data) ?? new();
-                if (!data.TryGetValue(oldName, out var value))
-                    continue;
-
-                if (!data.ContainsKey(newName!))
-                    data[newName!] = value;
-
-                data.Remove(oldName);
-                record.Data = JsonSerializer.Serialize(data);
-                record.UpdatedAt = DateTime.UtcNow;
-            }
+            await _dynamicTableService.UpdateColumnInTableAndDescendantsAsync(column, oldName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error updating physical columns for table ID {tableId}");
+            return StatusCode(500, "Error updating physical table columns");
         }
 
         _context.Columns.Update(column);
@@ -191,6 +212,20 @@ public class ColumnsController : ControllerBase
 
         if (column == null)
             return NotFound();
+
+        var table = await _context.Tables.FindAsync(tableId);
+        if (table == null)
+            return NotFound();
+
+        try
+        {
+            await _dynamicTableService.DropColumnFromTableAndDescendantsAsync(column);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error dropping column from physical tables for table ID {tableId}");
+            return StatusCode(500, "Error dropping column from physical tables");
+        }
 
         _context.Columns.Remove(column);
         await _context.SaveChangesAsync();

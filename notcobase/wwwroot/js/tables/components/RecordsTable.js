@@ -19,8 +19,8 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
     "div",
     { className: "table-responsive border rounded" },
     columns.length === 0
-      ? h("div", { className: "p-4 text-muted" }, "This table has no fields yet.")
-      : h(
+      ? withPermission("records.view", h("div", { className: "p-4 text-muted" }, "This table has no fields yet."))
+      : withPermission("records.view", h(
           "table",
           { className: "table table-bordered align-middle mb-0" },
           h(
@@ -63,7 +63,7 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                     h(
                       "td",
                       { className: "text-center" },
-                      withPermission("delete-record", h(
+                      withPermission("records.delete", h(
                         "button",
                         {
                           className: "btn btn-sm btn-outline-danger",
@@ -76,6 +76,7 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                 ),
           ),
         ),
+      )
   );
 }
 

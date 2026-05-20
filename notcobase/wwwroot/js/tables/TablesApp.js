@@ -18,6 +18,7 @@ const {
   RecordsTable,
   CreateTableModal,
   EditTableModal,
+  ImportDatabaseModal,
   CreateRecordModal,
   EditFieldModal,
 } = app;
@@ -47,6 +48,8 @@ function TablesApp() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showCreateTable, setShowCreateTable] = useState(false);
+  const [showImportDatabase, setShowImportDatabase] = useState(false);
+  const [importDatabaseFile, setImportDatabaseFile] = useState(null);
   const [showCreateRecord, setShowCreateRecord] = useState(false);
 
 
@@ -120,6 +123,31 @@ function TablesApp() {
       setShowCreateTable(false);
       await fetchTables();
       await fetchTableDetails(table);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const importExternalDatabase = async (event) => {
+    event.preventDefault();
+    if (!importDatabaseFile) return;
+
+    try {
+      setSaving(true);
+      const result = await TableOperations.importExternalDatabase(importDatabaseFile);
+      setShowImportDatabase(false);
+      setImportDatabaseFile(null);
+      const tables = await tableState.fetchTables();
+      tableState.setTables(tables);
+
+      if (result?.tables?.length > 0) {
+        const importedTable = tables.find((table) => table.id === result.tables[0].id) || result.tables[0];
+        await fetchTableDetails(importedTable);
+      }
+
+      setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -233,7 +261,24 @@ function TablesApp() {
     if (!selectedTableId || columnState.columns.length === 0) return;
 
     const data = columnState.columns.reduce((values, column) => {
-      values[column.name] = coerceRecordValue(recordState.recordForm[column.name], column.fieldType);
+      const rawValue = recordState.recordForm[column.name];
+      const coercedValue = coerceRecordValue(rawValue, column.fieldType);
+
+      // Skip undefined or empty optional values
+      if (
+        coercedValue === undefined ||
+        coercedValue === null ||
+        (typeof coercedValue === "string" && coercedValue.trim() === "")
+      ) {
+        // Still allow required fields to pass through
+        if (column.isRequired) {
+          values[column.name] = coercedValue;
+        }
+
+        return values;
+      }
+
+      values[column.name] = coercedValue;
       return values;
     }, {});
 
@@ -295,26 +340,40 @@ function TablesApp() {
     { className: "container-fluid py-4" },
     h(
       "div",
-      { className: "d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4" },
-      h(
-        "div",
-        null,
-        h("h1", { className: "h3 mb-1" }, "Notcobase"),
-      ),
+      {
+        className:
+          "d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4",
+      },
+      h("div", null, h("h1", { className: "h3 mb-1" }, "Notcobase")),
       h(
         "div",
         { className: "d-flex gap-2" },
-        h("button", { className: "btn btn-outline-secondary", onClick: fetchTables }, "Refresh"),
+        h(
+          "button",
+          { className: "btn btn-outline-secondary", onClick: fetchTables },
+          "Refresh",
+        ),
+        // withPermission(
+        //   "tables.import",
+          h(
+            "button",
+            {
+              className: "btn btn-outline-primary",
+              onClick: () => setShowImportDatabase(true),
+            },
+            "Import database",
+          ),
+        // ),
         withPermission(
           "tables.create",
           h(
             "button",
             {
               className: "btn btn-primary",
-              onClick: () => setShowCreateTable(true)
+              onClick: () => setShowCreateTable(true),
             },
-            "Create table"
-          )
+            "Create table",
+          ),
         ),
       ),
     ),
@@ -324,15 +383,12 @@ function TablesApp() {
     h(
       "div",
       { className: "row g-4" },
-      h(
-        TablesList,
-        {
-          tables: tableState.tables,
-          selectedTableId: selectedTableId,
-          loading: loading,
-          onSelectTable: fetchTableDetails,
-        },
-      ),
+      h(TablesList, {
+        tables: tableState.tables,
+        selectedTableId: selectedTableId,
+        loading: loading,
+        onSelectTable: fetchTableDetails,
+      }),
 
       h(
         "main",
@@ -346,122 +402,114 @@ function TablesApp() {
           : h(
               "div",
               null,
-              h(
-                TableHeader,
-                {
-                  activeTable: activeTable,
-                  onEdit: () => tableState.openEditTable(activeTable),
-                  onDelete: () => deleteTable(activeTable),
-                  onAddRecord: () => setShowCreateRecord(true),
-                  disableAddRecord: columnState.columns.length === 0,
-                },
-              ),
+              h(TableHeader, {
+                activeTable: activeTable,
+                onEdit: () => tableState.openEditTable(activeTable),
+                onDelete: () => deleteTable(activeTable),
+                onAddRecord: () => setShowCreateRecord(true),
+                disableAddRecord: columnState.columns.length === 0,
+              }),
 
               h(
                 "div",
                 { className: "row g-3 mb-4" },
-                h(
-                  FieldsList,
-                  {
-                    columns: columnState.columns,
-                    fieldForm: columnState.fieldForm,
-                    onFieldFormChange: columnState.setFieldForm,
-                    onAddField: createColumn,
-                    onEditField: columnState.openEditColumn,
-                    onDeleteField: deleteColumn,
-                    saving: saving,
-                  },
-                ),
-                h(
-                  TableStats,
-                  {
-                    columnsCount: columnState.columns.length,
-                    recordsCount: recordState.records.length,
-                    totalRecords: activeTable.recordCount || recordState.records.length,
-                  },
-                ),
+                h(FieldsList, {
+                  columns: columnState.columns,
+                  fieldForm: columnState.fieldForm,
+                  onFieldFormChange: columnState.setFieldForm,
+                  onAddField: createColumn,
+                  onEditField: columnState.openEditColumn,
+                  onDeleteField: deleteColumn,
+                  saving: saving,
+                }),
+                h(TableStats, {
+                  columnsCount: columnState.columns.length,
+                  recordsCount: recordState.records.length,
+                  totalRecords:
+                    activeTable.recordCount || recordState.records.length,
+                }),
               ),
 
-              h(
-                RecordsTable,
-                {
-                  columns: columnState.columns,
-                  records: recordState.records,
-                  onEditCell: cellEditorState.openCellEditor,
-                  onDeleteRecord: deleteRecord,
-                },
-              ),
+              h(RecordsTable, {
+                columns: columnState.columns,
+                records: recordState.records,
+                onEditCell: cellEditorState.openCellEditor,
+                onDeleteRecord: deleteRecord,
+              }),
             ),
       ),
     ),
 
     withPermission(
       "tables.create",
-      h(
-        CreateTableModal,
-        {
-          isOpen: showCreateTable,
-          tableForm: tableState.tableForm,
-          parentTableOptions: parentTableOptions,
-          onFormChange: tableState.setTableForm,
-          onSubmit: createTable,
-          onClose: () => setShowCreateTable(false),
-          saving: saving,
+      h(ImportDatabaseModal, {
+        isOpen: showImportDatabase,
+        file: importDatabaseFile,
+        onFileChange: setImportDatabaseFile,
+        onSubmit: importExternalDatabase,
+        onClose: () => {
+          setShowImportDatabase(false);
+          setImportDatabaseFile(null);
         },
-      )
+        saving: saving,
+      }),
+    ),
+
+    withPermission(
+      "tables.create",
+      h(CreateTableModal, {
+        isOpen: showCreateTable,
+        tableForm: tableState.tableForm,
+        parentTableOptions: parentTableOptions,
+        onFormChange: tableState.setTableForm,
+        onSubmit: createTable,
+        onClose: () => setShowCreateTable(false),
+        saving: saving,
+      }),
     ),
 
     withPermission(
       "tables.edit",
-      h(
-        EditTableModal,
-        {
-          isOpen: !!tableState.editingTable,
-          editingTable: tableState.editingTable,
-          editTableForm: tableState.editTableForm,
-          tables: tableState.tables,
-          onFormChange: tableState.setEditTableForm,
-          onSubmit: updateTable,
-          onClose: tableState.resetEditTableForm,
-          saving: saving,
-        },
-      )
+      h(EditTableModal, {
+        isOpen: !!tableState.editingTable,
+        editingTable: tableState.editingTable,
+        editTableForm: tableState.editTableForm,
+        tables: tableState.tables,
+        onFormChange: tableState.setEditTableForm,
+        onSubmit: updateTable,
+        onClose: tableState.resetEditTableForm,
+        saving: saving,
+      }),
     ),
 
     withPermission(
       "records.create",
-      h(
-        CreateRecordModal,
-        {
-          isOpen: showCreateRecord,
-          activeTable: activeTable,
-          columns: columnState.columns,
-          recordForm: recordState.recordForm,
-          onRecordFormChange: recordState.setRecordForm,
-          onListItemChange: recordState.setListItem,
-          onAddListItem: recordState.addListItem,
-          onRemoveListItem: recordState.removeListItem,
-          onSubmit: createRecord,
-          onClose: () => setShowCreateRecord(false),
-          saving: saving,
-        },
-      )
+      h(CreateRecordModal, {
+        isOpen: showCreateRecord,
+        activeTable: activeTable,
+        columns: columnState.columns,
+        recordForm: recordState.recordForm,
+        onRecordFormChange: recordState.setRecordForm,
+        onListItemChange: recordState.setListItem,
+        onAddListItem: recordState.addListItem,
+        onRemoveListItem: recordState.removeListItem,
+        onSubmit: createRecord,
+        onClose: () => setShowCreateRecord(false),
+        saving: saving,
+      }),
     ),
 
     withPermission(
       "columns.edit",
-      h(
-        EditFieldModal,
-        {
-          isOpen: !!columnState.editingColumn,
-          editingColumn: columnState.editingColumn,
-          editFieldForm: columnState.editFieldForm,
-          onFormChange: columnState.setEditFieldForm,
-          onSubmit: updateColumn,
-          onClose: columnState.resetEditFieldForm,
-          saving: saving,
-        },
-      )
+      h(EditFieldModal, {
+        isOpen: !!columnState.editingColumn,
+        editingColumn: columnState.editingColumn,
+        editFieldForm: columnState.editFieldForm,
+        onFormChange: columnState.setEditFieldForm,
+        onSubmit: updateColumn,
+        onClose: columnState.resetEditFieldForm,
+        saving: saving,
+      }),
     ),
 
     cellEditorState.cellEditor &&
@@ -473,10 +521,14 @@ function TablesApp() {
           onValueChange: cellEditorState.updateCellEditorValue,
           onListItemChange: cellEditorState.updateCellEditorListItem,
           onListItemRemove: cellEditorState.removeCellEditorListItem,
-          onNewItemChange: (value) => cellEditorState.setCellEditor({ ...cellEditorState.cellEditor, newItem: value }),
+          onNewItemChange: (value) =>
+            cellEditorState.setCellEditor({
+              ...cellEditorState.cellEditor,
+              newItem: value,
+            }),
           onSave: saveCellEditor,
           onCancel: cellEditorState.closeCellEditor,
-        })
+        }),
       ),
   );
 }
