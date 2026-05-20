@@ -37,21 +37,22 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
-            return Ok(new List<RecordDto>()); // No records if table not yet created
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
+            return Ok(new List<RecordDto>());
 
         try
         {
             var skipValue = skip ?? 0;
             var limitValue = limit ?? 100;
 
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
             var columnList = BuildSelectColumnList(columns);
 
             var sql = $@"
                 SELECT Id{columnList}, CreatedAt, UpdatedAt
                 FROM [{physicalTableName}]
+                WHERE LogicalTableId = {tableId}
                 ORDER BY CreatedAt DESC
                 LIMIT {limitValue} OFFSET {skipValue}";
 
@@ -91,19 +92,20 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return NotFound("Record not found");
 
         try
         {
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
             var columnList = BuildSelectColumnList(columns);
 
             var sql = $@"
                 SELECT Id{columnList}, CreatedAt, UpdatedAt
                 FROM [{physicalTableName}]
-                WHERE Id = {recordId}";
+                WHERE Id = {recordId}
+                  AND LogicalTableId = {tableId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -140,7 +142,7 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return BadRequest("Physical table has not been created yet. Please add columns first.");
 
         var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
@@ -150,7 +152,7 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columnNamesSet = columns
                 .Select(c => c.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -162,20 +164,21 @@ public class RecordsController : ControllerBase
 
             var columnNames = string.Join(", ", validData.Keys.Select(k => $"[{k}]"));
             var columnValues = string.Join(", ", validData.Values.Select(v => FormatSqlValue(v)));
-
+            var logicalTableColumn = "[LogicalTableId]";
+            var logicalTableValue = tableId.ToString();
             string sql;
 
             if (validData.Count == 0)
             {
                 sql = $@"
-                    INSERT INTO [{physicalTableName}] (CreatedAt, UpdatedAt)
-                    VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                    INSERT INTO [{physicalTableName}] ({logicalTableColumn}, CreatedAt, UpdatedAt)
+                    VALUES ({logicalTableValue}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
             }
             else
             {
                 sql = $@"
-                    INSERT INTO [{physicalTableName}] ({columnNames}, CreatedAt, UpdatedAt)
-                    VALUES ({columnValues}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                    INSERT INTO [{physicalTableName}] ({logicalTableColumn}, {columnNames}, CreatedAt, UpdatedAt)
+                    VALUES ({logicalTableValue}, {columnValues}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
             }
 
             var connection = _context.Database.GetDbConnection();
@@ -220,7 +223,7 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return BadRequest("Physical table does not exist");
 
         var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
@@ -230,7 +233,7 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columnNamesSet = columns
                 .Select(c => c.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -244,7 +247,8 @@ public class RecordsController : ControllerBase
             var sql = $@"
                 UPDATE [{physicalTableName}]
                 SET {setClause}
-                WHERE Id = {recordId}";
+                WHERE Id = {recordId}
+                  AND LogicalTableId = {tableId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -274,13 +278,13 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return NotFound("Record not found");
 
         try
         {
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
-            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id = {recordId}";
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
+            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id = {recordId} AND LogicalTableId = {tableId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -310,15 +314,15 @@ public class RecordsController : ControllerBase
         if (table == null)
             return NotFound("Table not found");
 
-        if (!table.PhysicalTableCreated)
+        if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return Ok(new { deletedCount = 0 });
 
         try
         {
-            var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableId);
+            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var idList = string.Join(", ", dto.RecordIds);
 
-            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id IN ({idList})";
+            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id IN ({idList}) AND LogicalTableId = {tableId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();

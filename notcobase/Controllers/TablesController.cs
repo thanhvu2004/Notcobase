@@ -48,7 +48,7 @@ public class TablesController : ControllerBase
                 ParentTableId = t.ParentTableId,
                 ParentTableName = t.ParentTable?.Name,
                 ColumnCount = GetEffectiveColumns(t, tableMap).Count,
-                PhysicalTableCreated = t.PhysicalTableCreated,
+                PhysicalTableCreated = GetRootPhysicalCreated(t, tableMap),
                 CreatedAt = t.CreatedAt,
                 UpdatedAt = t.UpdatedAt
             })
@@ -92,7 +92,7 @@ public class TablesController : ControllerBase
                 TableId = c.TableId,
                 IsInherited = c.TableId != table.Id
             }).ToList(),
-            PhysicalTableCreated = table.PhysicalTableCreated,
+            PhysicalTableCreated = GetRootPhysicalCreated(table, tableMap),
             CreatedAt = table.CreatedAt,
             UpdatedAt = table.UpdatedAt
         };
@@ -343,8 +343,8 @@ public class TablesController : ControllerBase
         if (await _context.Tables.AnyAsync(t => t.ParentTableId == id))
             return BadRequest("Cannot delete a table while other tables inherit from it");
 
-        // Drop the physical table if it exists
-        if (table.PhysicalTableCreated)
+        // Drop the physical table if this table owns the hierarchy root or is independent.
+        if (!table.InheritProperties && table.PhysicalTableCreated)
         {
             try
             {
@@ -393,6 +393,18 @@ public class TablesController : ControllerBase
         }
 
         columns.AddRange(table.Columns);
+    }
+
+    private static bool GetRootPhysicalCreated(Table table, IReadOnlyDictionary<int, Table> tableMap)
+    {
+        while (table.InheritProperties &&
+               table.ParentTableId.HasValue &&
+               tableMap.TryGetValue(table.ParentTableId.Value, out var parentTable))
+        {
+            table = parentTable;
+        }
+
+        return table.PhysicalTableCreated;
     }
 
     private async Task<bool> WouldCreateInheritanceCycle(int tableId, int parentTableId)
@@ -494,8 +506,13 @@ public class TablesController : ControllerBase
             var parameterNames = columnMappings.Select((_, index) => $"@p{index}").ToList();
 
             insertCommand.CommandText = $@"
-                INSERT INTO [{physicalTableName}] ({targetColumns}, CreatedAt, UpdatedAt)
-                VALUES ({string.Join(", ", parameterNames)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                INSERT INTO [{physicalTableName}] ([LogicalTableId], {targetColumns}, CreatedAt, UpdatedAt)
+                VALUES (@logicalTableId, {string.Join(", ", parameterNames)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+
+            var logicalTableIdParameter = insertCommand.CreateParameter();
+            logicalTableIdParameter.ParameterName = "@logicalTableId";
+            logicalTableIdParameter.Value = targetTableId;
+            insertCommand.Parameters.Add(logicalTableIdParameter);
 
             for (var i = 0; i < columnMappings.Count; i++)
             {
