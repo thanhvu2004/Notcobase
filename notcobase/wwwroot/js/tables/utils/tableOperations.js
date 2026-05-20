@@ -31,6 +31,16 @@ const TableOperations = {
   deleteTable: async (tableId) => {
     return await api(`/tables/${tableId}`, { method: "DELETE" });
   },
+
+  importExternalDatabase: async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    return await api("/tables/import-external-database", {
+      method: "POST",
+      body: formData,
+    });
+  },
 };
 
 app.TableOperations = TableOperations;

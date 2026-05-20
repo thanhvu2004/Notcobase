@@ -6,8 +6,9 @@
     const token = localStorage.getItem("jwtToken");
 
     // Build headers
+    const isFormData = options.body instanceof FormData;
     const headers = {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers || {}),
     };
 
