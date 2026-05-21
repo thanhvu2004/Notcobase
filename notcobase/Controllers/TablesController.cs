@@ -7,6 +7,7 @@ using notcobase.Data;
 using notcobase.Models;
 using notcobase.Services;
 using System.Data;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace notcobase.Controllers;
@@ -170,6 +171,74 @@ public class TablesController : ControllerBase
     }
 
     /// Import tables and records from an uploaded SQLite database file
+    [HttpPost("import-external-database/preview")]
+    [Permission("tables.create")]
+    public async Task<ActionResult<List<ImportPreviewTableDto>>> PreviewExternalDatabase(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("Database file is required");
+
+        var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.sqlite");
+
+        try
+        {
+            await using (var stream = System.IO.File.Create(tempFilePath))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            await using var sourceConnection = new SqliteConnection($"Data Source={tempFilePath};Mode=ReadOnly");
+            await sourceConnection.OpenAsync();
+
+            var sourceTables = await GetSourceTableNamesAsync(sourceConnection);
+            if (sourceTables.Count == 0)
+                return BadRequest("No user tables were found in the uploaded database");
+
+            var previews = new List<ImportPreviewTableDto>();
+            foreach (var sourceTableName in sourceTables)
+            {
+                var sourceColumns = await GetSourceColumnsAsync(sourceConnection, sourceTableName);
+                if (sourceColumns.Count == 0)
+                    continue;
+
+                var recordCount = await GetSourceTableRowCountAsync(sourceConnection, sourceTableName);
+                previews.Add(new ImportPreviewTableDto
+                {
+                    SourceName = sourceTableName,
+                    ColumnCount = sourceColumns.Count,
+                    RecordCount = recordCount,
+                });
+            }
+
+            if (previews.Count == 0)
+                return BadRequest("No importable tables were found in the uploaded database");
+
+            return Ok(previews);
+        }
+        catch (SqliteException ex)
+        {
+            _logger.LogError(ex, "Error reading uploaded SQLite database");
+            return BadRequest("The uploaded file could not be read as a SQLite database");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error previewing external database");
+            return StatusCode(500, "Error previewing external database");
+        }
+        finally
+        {
+            try
+            {
+                if (System.IO.File.Exists(tempFilePath))
+                    System.IO.File.Delete(tempFilePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not remove temporary import file {TempFilePath}", tempFilePath);
+            }
+        }
+    }
+
     [HttpPost("import-external-database")]
     [Permission("tables.create")]
     public async Task<ActionResult<ImportDatabaseResultDto>> ImportExternalDatabase(IFormFile file)
@@ -192,6 +261,17 @@ public class TablesController : ControllerBase
             var sourceTables = await GetSourceTableNamesAsync(sourceConnection);
             if (sourceTables.Count == 0)
                 return BadRequest("No user tables were found in the uploaded database");
+
+            var selectedSourceTableNames = ReadSelectedSourceTableNames();
+            if (selectedSourceTableNames != null)
+            {
+                sourceTables = sourceTables
+                    .Where(name => selectedSourceTableNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (sourceTables.Count == 0)
+                    return BadRequest("No selected tables were found in the uploaded database");
+            }
 
             var existingTableNames = await _context.Tables
                 .Select(t => t.Name)
@@ -263,6 +343,11 @@ public class TablesController : ControllerBase
                 RecordCount = importedTables.Sum(t => t.RecordCount),
                 Tables = importedTables
             });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Error parsing selected table names");
+            return BadRequest("Invalid selected table list");
         }
         catch (SqliteException ex)
         {
@@ -594,7 +679,23 @@ public class TablesController : ControllerBase
     {
         return identifier.Replace("]", "]]");
     }
+    private static async Task<int> GetSourceTableRowCountAsync(SqliteConnection connection, string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {QuoteSqliteIdentifier(tableName)}";
 
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result);
+    }
+
+    private List<string>? ReadSelectedSourceTableNames()
+    {
+        if (!Request.Form.TryGetValue("selectedTables", out var selectedTablesValue) || selectedTablesValue.Count == 0)
+            return null;
+
+        var selectedTableNames = JsonSerializer.Deserialize<List<string>>(selectedTablesValue[0]);
+        return selectedTableNames?.Any() == true ? selectedTableNames : null;
+    }
     private sealed record SourceColumnInfo(string Name, string Type, bool NotNull);
     private sealed record ImportColumnMapping(string SourceName, string TargetName);
 }
@@ -665,6 +766,13 @@ public class ImportedTableDto
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string SourceName { get; set; } = string.Empty;
+    public int ColumnCount { get; set; }
+    public int RecordCount { get; set; }
+}
+
+public class ImportPreviewTableDto
+{
     public string SourceName { get; set; } = string.Empty;
     public int ColumnCount { get; set; }
     public int RecordCount { get; set; }

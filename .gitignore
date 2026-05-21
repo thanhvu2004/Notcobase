@@ -407,3 +407,5 @@ ASALocalRun/
 # db files and migration files
 *.db
 migrations/
+*.db-shm
+*.db-wal

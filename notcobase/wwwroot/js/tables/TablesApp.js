@@ -130,13 +130,13 @@ function TablesApp() {
     }
   };
 
-  const importExternalDatabase = async (event) => {
+  const importExternalDatabase = async (event, selectedTables) => {
     event.preventDefault();
-    if (!importDatabaseFile) return;
+    if (!importDatabaseFile || !selectedTables?.length) return;
 
     try {
       setSaving(true);
-      const result = await TableOperations.importExternalDatabase(importDatabaseFile);
+      const result = await TableOperations.importExternalDatabase(importDatabaseFile, selectedTables);
       setShowImportDatabase(false);
       setImportDatabaseFile(null);
       const tables = await tableState.fetchTables();

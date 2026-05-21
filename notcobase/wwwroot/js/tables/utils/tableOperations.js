@@ -32,9 +32,12 @@ const TableOperations = {
     return await api(`/tables/${tableId}`, { method: "DELETE" });
   },
 
-  importExternalDatabase: async (file) => {
+  importExternalDatabase: async (file, selectedTables) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (selectedTables?.length) {
+      formData.append("selectedTables", JSON.stringify(selectedTables));
+    }
 
     return await api("/tables/import-external-database", {
       method: "POST",
