@@ -116,6 +116,115 @@ public class DynamicTableService
         }
     }
 
+    /// Synchronizes the physical storage when a table's inheritance metadata changes.
+    public async Task<bool> SyncTableInheritanceAsync(int tableId, int? oldRootTableId = null)
+    {
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
+
+        if (!tableMap.TryGetValue(tableId, out var table))
+            throw new InvalidOperationException($"Table with ID {tableId} not found");
+
+        var newRootTableId = GetRootTableId(table, tableMap);
+        var newRootTable = tableMap[newRootTableId];
+
+        if (!newRootTable.PhysicalTableCreated)
+        {
+            await CreatePhysicalTableAsync(tableId);
+            tableMap = await _context.Tables
+                .Include(t => t.Columns)
+                .ToDictionaryAsync(t => t.Id);
+        }
+        else
+        {
+            await RebuildRootPhysicalTableAsync(newRootTableId, tableMap);
+        }
+
+        if (oldRootTableId.HasValue && oldRootTableId.Value != newRootTableId)
+        {
+            await MoveSubtreeRowsToNewRootAsync(tableId, oldRootTableId.Value, newRootTableId);
+            await RebuildRootPhysicalTableAsync(oldRootTableId.Value, tableMap);
+            await RebuildRootPhysicalTableAsync(newRootTableId, tableMap);
+        }
+
+        return true;
+    }
+
+    private async Task RebuildRootPhysicalTableAsync(int rootTableId, Dictionary<int, Table> tableMap)
+    {
+        if (!tableMap.TryGetValue(rootTableId, out var rootTable))
+            throw new InvalidOperationException($"Table with ID {rootTableId} not found");
+
+        if (!rootTable.PhysicalTableCreated)
+            return;
+
+        var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap);
+        await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
+    }
+
+    private async Task MoveSubtreeRowsToNewRootAsync(int movedTableId, int oldRootTableId, int newRootTableId)
+    {
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
+
+        if (!tableMap.TryGetValue(oldRootTableId, out var oldRootTable))
+            throw new InvalidOperationException($"Table with ID {oldRootTableId} not found");
+
+        if (!tableMap.TryGetValue(newRootTableId, out var newRootTable))
+            throw new InvalidOperationException($"Table with ID {newRootTableId} not found");
+
+        if (!oldRootTable.PhysicalTableCreated || !newRootTable.PhysicalTableCreated)
+            return;
+
+        var subtreeTableIds = GetHierarchyTables(movedTableId, tableMap)
+            .Select(t => t.Id)
+            .ToList();
+
+        if (!subtreeTableIds.Any())
+            return;
+
+        var oldPhysicalName = GetPhysicalTableName(oldRootTableId);
+        var newPhysicalName = GetPhysicalTableName(newRootTableId);
+
+        var newRootColumns = GetHierarchyColumns(newRootTableId, tableMap);
+        var oldPhysicalColumns = await GetPhysicalColumnNamesAsync(oldPhysicalName);
+
+        var insertColumns = new List<string> { "LogicalTableId" };
+        insertColumns.AddRange(newRootColumns.Select(c => c.Name));
+        insertColumns.Add("CreatedAt");
+        insertColumns.Add("UpdatedAt");
+
+        var selectColumns = new List<string>
+        {
+            oldPhysicalColumns.Contains("LogicalTableId") ? "[LogicalTableId]" : movedTableId.ToString()
+        };
+
+        selectColumns.AddRange(newRootColumns.Select(column =>
+        {
+            if (oldPhysicalColumns.Contains(column.Name))
+                return $"[{column.Name}]";
+
+            return GetDefaultSqlValue(column);
+        }));
+
+        selectColumns.Add(oldPhysicalColumns.Contains("CreatedAt") ? "[CreatedAt]" : "CURRENT_TIMESTAMP");
+        selectColumns.Add(oldPhysicalColumns.Contains("UpdatedAt") ? "[UpdatedAt]" : "CURRENT_TIMESTAMP");
+
+        var subtreeIdList = string.Join(", ", subtreeTableIds);
+
+        await _context.Database.ExecuteSqlRawAsync($@"
+            INSERT INTO [{newPhysicalName}] ({string.Join(", ", insertColumns.Select(c => $"[{c}]"))})
+            SELECT {string.Join(", ", selectColumns)}
+            FROM [{oldPhysicalName}]
+            WHERE LogicalTableId IN ({subtreeIdList})");
+
+        await _context.Database.ExecuteSqlRawAsync($@"
+            DELETE FROM [{oldPhysicalName}]
+            WHERE LogicalTableId IN ({subtreeIdList})");
+    }
+
     /// Adds a column to an existing hierarchy physical table.
     public async Task<bool> AddColumnAsync(Column column)
     {
@@ -484,7 +593,10 @@ public class DynamicTableService
         selectColumns.Add(existingColumnNames.Contains("CreatedAt") ? "[CreatedAt]" : "CURRENT_TIMESTAMP");
         selectColumns.Add(existingColumnNames.Contains("UpdatedAt") ? "[UpdatedAt]" : "CURRENT_TIMESTAMP");
 
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        var currentTransaction = _context.Database.CurrentTransaction;
+        var ownsTransaction = currentTransaction == null;
+        if (ownsTransaction)
+            currentTransaction = await _context.Database.BeginTransactionAsync();
 
         await _context.Database.ExecuteSqlRawAsync($@"
             CREATE TABLE [{tempTableName}] (
@@ -500,7 +612,8 @@ public class DynamicTableService
         await _context.Database.ExecuteSqlRawAsync($"DROP TABLE [{physicalTableName}]");
         await _context.Database.ExecuteSqlRawAsync($"ALTER TABLE [{tempTableName}] RENAME TO [{physicalTableName}]");
 
-        await transaction.CommitAsync();
+        if (ownsTransaction && currentTransaction != null)
+            await currentTransaction.CommitAsync();
     }
 
     private async Task<HashSet<string>> GetPhysicalColumnNamesAsync(string physicalTableName)

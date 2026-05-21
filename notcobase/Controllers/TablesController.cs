@@ -382,6 +382,13 @@ public class TablesController : ControllerBase
         if (table == null)
             return NotFound();
 
+        var oldParentTableId = table.ParentTableId;
+        var oldInheritProperties = table.InheritProperties;
+        var tableMap = await _context.Tables
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.Id);
+        var oldRootTableId = GetRootTableId(table, tableMap);
+
         if (!string.IsNullOrWhiteSpace(dto.Name))
             table.Name = dto.Name;
 
@@ -409,10 +416,33 @@ public class TablesController : ControllerBase
         if (!table.InheritProperties)
             table.ParentTableId = null;
 
+        if (table.InheritProperties && !table.ParentTableId.HasValue)
+            return BadRequest("Parent table is required when inheritance is enabled");
+
+        var newParentTableId = table.InheritProperties ? table.ParentTableId : null;
+        var inheritanceChanged = oldInheritProperties != table.InheritProperties || oldParentTableId != newParentTableId;
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
         table.UpdatedAt = DateTime.UtcNow;
         _context.Tables.Update(table);
         await _context.SaveChangesAsync();
 
+        if (inheritanceChanged)
+        {
+            try
+            {
+                await _dynamicTableService.SyncTableInheritanceAsync(table.Id, oldRootTableId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error syncing inheritance for table ID {table.Id}");
+                await transaction.RollbackAsync();
+                return StatusCode(500, "Error syncing inheritance metadata");
+            }
+        }
+
+        await transaction.CommitAsync();
         return NoContent();
     }
 
@@ -490,6 +520,18 @@ public class TablesController : ControllerBase
         }
 
         return table.PhysicalTableCreated;
+    }
+
+    private static int GetRootTableId(Table table, IReadOnlyDictionary<int, Table> tableMap)
+    {
+        while (table.InheritProperties &&
+               table.ParentTableId.HasValue &&
+               tableMap.TryGetValue(table.ParentTableId.Value, out var parentTable))
+        {
+            table = parentTable;
+        }
+
+        return table.Id;
     }
 
     private async Task<bool> WouldCreateInheritanceCycle(int tableId, int parentTableId)
