@@ -24,7 +24,7 @@ function TablesList({ tables, selectedTableId, loading, onSelectTable }) {
                 h(
                   "small",
                   { className: selectedTableId === table.id ? "text-white-50" : "text-muted" },
-                  `${table.columnCount || 0} fields, ${table.recordCount || 0} records`,
+                  `${table.columnCount || 0} fields`,
                 ),
                 table.inheritProperties &&
                   h(
