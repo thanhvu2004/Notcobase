@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<UserRole> UserRoles { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
+    public DbSet<LowCodePage> LowCodePages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +47,18 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Column>()
             .Property(c => c.FieldType)
             .HasMaxLength(50);
+
+        modelBuilder.Entity<LowCodePage>()
+            .Property(p => p.Name)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<LowCodePage>()
+            .Property(p => p.Slug)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<LowCodePage>()
+            .HasIndex(p => p.Slug)
+            .IsUnique();
 
         // Role base access
         modelBuilder.Entity<UserRole>()
