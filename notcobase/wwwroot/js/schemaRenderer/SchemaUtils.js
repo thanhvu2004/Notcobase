@@ -76,7 +76,15 @@
   }
 
   function isContainerNode(schema) {
-    return ["Card", "Form", "Grid.Col", "Grid.Row", "Space", "Tabs"].includes(inferComponent(schema));
+    return ["Card", "Form", "FormBlock", "DetailCard", "Grid.Col", "Grid.Row", "Space", "Tabs"].includes(inferComponent(schema));
+  }
+
+  function isBlockComponent(componentName) {
+    return ["DetailCard", "FormBlock", "TableBlock"].includes(componentName);
+  }
+
+  function isFormLikeBlock(schema) {
+    return ["Form", "FormBlock", "DetailCard"].includes(inferComponent(schema));
   }
 
   function findNode(schema, nodeId) {
@@ -268,6 +276,72 @@
     const fieldComponents = ["Input", "Input.TextArea", "InputNumber", "Select", "DatePicker", "Switch", "Checkbox"];
     const key = `${componentName || "component"}_${Date.now().toString(36)}`.replace(/[^a-zA-Z0-9_]/g, "_");
 
+    if (componentName === "DetailCard") {
+      return {
+        id: createNodeId(key),
+        type: "void",
+        title: "Detail card",
+        "x-component": "DetailCard",
+        "x-component-props": {
+          title: "Record details",
+          bordered: true,
+          tableId: null,
+          recordIdParam: "id",
+          allowEdit: true,
+          allowDelete: true,
+          layout: "vertical",
+        },
+        properties: {
+          name: {
+            type: "string",
+            title: "Name",
+            "x-component": "Input",
+            "x-field": "name",
+            "x-index": 0,
+          },
+        },
+      };
+    }
+
+    if (componentName === "FormBlock") {
+      return {
+        id: createNodeId(key),
+        type: "object",
+        title: "Form block",
+        "x-component": "FormBlock",
+        "x-component-props": {
+          title: "Form block",
+          tableId: null,
+          recordIdParam: "id",
+          mode: "auto",
+          allowCreate: true,
+          allowDelete: false,
+          layout: "vertical",
+          submitLabel: "Save",
+          formColumns: [],
+        },
+        properties: {},
+      };
+    }
+
+    if (componentName === "TableBlock") {
+      return {
+        id: createNodeId(key),
+        type: "array",
+        title: "Table block",
+        "x-component": "TableBlock",
+        "x-component-props": {
+          title: "Records",
+          tableId: null,
+          allowCreate: true,
+          allowEdit: true,
+          allowDelete: true,
+          pageSize: 10,
+          columns: [],
+        },
+      };
+    }
+
     return {
       id: createNodeId(key),
       type: fieldComponents.includes(componentName) ? "string" : "void",
@@ -287,8 +361,11 @@
     findNode,
     inferComponent,
     insertNode,
+    isBlockComponent,
     isContainerNode,
+    isFormLikeBlock,
     moveNode,
+    normalizeIndexes,
     removeNode,
     setRequired,
     sortSchemaEntries,

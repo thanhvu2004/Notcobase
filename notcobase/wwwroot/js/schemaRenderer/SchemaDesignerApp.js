@@ -8,6 +8,7 @@
     SchemaPagesApi,
     SchemaRenderer,
     SchemaUtils,
+    TablesApi,
   } = window.Notcobase;
 
   const defaultSchema = SchemaUtils.ensureNodeIds({
@@ -72,9 +73,14 @@
     const [saving, setSaving] = useState(false);
     const [schemaError, setSchemaError] = useState("");
     const [submittedValues, setSubmittedValues] = useState(null);
+    const [tables, setTables] = useState([]);
+    const [runtimeRecordId, setRuntimeRecordId] = useState("");
 
     useEffect(() => {
       loadPages();
+      TablesApi.list()
+        .then(setTables)
+        .catch((error) => message.error(error.message));
     }, []);
 
     useEffect(() => {
@@ -264,6 +270,9 @@
               h(SchemaRenderer, {
                 schema,
                 mode,
+                runtimeContext: {
+                  recordId: runtimeRecordId ? Number(runtimeRecordId) : null,
+                },
                 onMoveNode: moveNode,
                 onDeleteNode: deleteNode,
                 onSubmit: (values) => {
@@ -271,10 +280,23 @@
                   message.success("Form submitted");
                 },
               }),
+              mode === "runtime" &&
+                h(
+                  "div",
+                  { className: "schema-runtime-controls" },
+                  h(Typography.Text, null, "Preview record ID"),
+                  h(Input, {
+                    style: { maxWidth: 180 },
+                    placeholder: "e.g. 1",
+                    value: runtimeRecordId,
+                    onChange: (event) => setRuntimeRecordId(event.target.value),
+                  }),
+                ),
               submittedValues && h("pre", { className: "schema-demo-output" }, JSON.stringify(submittedValues, null, 2)),
             ),
             h(PropertyPanel, {
               schema,
+              tables,
               onSchemaChange: handleSchemaChange,
               onAddComponent: addComponent,
             }),

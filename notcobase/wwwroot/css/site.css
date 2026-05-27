@@ -181,8 +181,69 @@ body {
   background: #cf1322;
 }
 
+.schema-block {
+  margin-bottom: 12px;
+}
+
+.schema-block .ant-card-head {
+  min-height: 42px;
+}
+
+.schema-runtime-controls {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 12px;
+}
+
 .schema-property-actions {
   width: 100%;
+}
+
+.schema-form-column-hint {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.schema-form-column-loading {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 8px;
+}
+
+.schema-form-column-actions {
+  margin-bottom: 8px;
+}
+
+.schema-form-column-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.schema-form-column-item {
+  align-items: center;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.schema-form-column-item:hover {
+  border-color: #91caff;
+  background: #f5f9ff;
+}
+
+.schema-form-column-name {
+  flex: 1 1 auto;
+  font-weight: 500;
+  min-width: 80px;
 }
 
 .schema-designer-loading {

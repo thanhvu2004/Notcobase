@@ -62,32 +62,32 @@ public static class MetadataSeedData
             {"type":"void","title":"Button","x-component":"Button","x-component-props":{"type":"primary"},"x-index":0}
             """),
         Component("DetailCard", "Data", "profile-outlined", canHaveChildren: true,
-            defaultProps: """{"title":"Record details","bordered":true}""",
+            defaultProps: """{"title":"Record details","bordered":true,"tableId":null,"recordIdParam":"id","allowEdit":true,"allowDelete":true,"layout":"vertical"}""",
             defaultSchema: """
-            {"type":"void","title":"Detail card","x-component":"Card","x-component-props":{"title":"Record details"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-index":0},"status":{"type":"string","title":"Status","x-component":"Select","x-index":1}},"x-index":0}
+            {"type":"void","title":"Detail card","x-component":"DetailCard","x-component-props":{"title":"Record details","bordered":true,"tableId":null,"recordIdParam":"id","allowEdit":true,"allowDelete":true,"layout":"vertical"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-field":"name","x-index":0},"status":{"type":"string","title":"Status","x-component":"Select","x-field":"status","x-index":1}},"x-index":0}
             """),
         Component("FormBlock", "Layout", "form-outlined", canHaveChildren: true,
-            defaultProps: """{"layout":"vertical"}""",
+            defaultProps: """{"title":"Form block","layout":"vertical","tableId":null,"recordIdParam":"id","mode":"auto","allowCreate":true,"allowDelete":false,"submitLabel":"Save"}""",
             defaultSchema: """
-            {"type":"object","title":"Form block","x-component":"Form","x-component-props":{"layout":"vertical"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-index":0}},"x-index":0}
+            {"type":"object","title":"Form block","x-component":"FormBlock","x-component-props":{"title":"Form block","layout":"vertical","tableId":null,"recordIdParam":"id","mode":"auto","allowCreate":true,"allowDelete":false,"submitLabel":"Save"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-field":"name","x-index":0}},"x-index":0}
             """),
         Component("TableBlock", "Data", "table-outlined", canHaveChildren: false,
-            defaultProps: """{"size":"middle","pagination":{"pageSize":10}}""",
+            defaultProps: """{"title":"Records","tableId":null,"allowCreate":true,"allowEdit":true,"allowDelete":true,"pageSize":10,"columns":[]}""",
             defaultSchema: """
-            {"type":"array","title":"Table block","x-component":"Table","x-component-props":{"columns":[{"title":"Name","dataIndex":"name"},{"title":"Created","dataIndex":"createdAt"}],"dataSource":[]},"x-index":0}
+            {"type":"array","title":"Table block","x-component":"TableBlock","x-component-props":{"title":"Records","tableId":null,"allowCreate":true,"allowEdit":true,"allowDelete":true,"pageSize":10,"columns":[]},"x-index":0}
             """),
     };
 
     public static IReadOnlyList<BlockTemplateSeed> BlockTemplates { get; } = new BlockTemplateSeed[]
     {
         new BlockTemplateSeed("Empty form block", "block", """
-        {"type":"object","name":"formBlock","title":"Form block","x-component":"Form","x-component-props":{"layout":"vertical"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-index":0},"submit":{"type":"void","title":"Submit","x-component":"Button","x-component-props":{"type":"primary","htmlType":"submit"},"x-index":1}}}
+        {"type":"object","name":"formBlock","title":"Form block","x-component":"FormBlock","x-component-props":{"title":"Form block","layout":"vertical","tableId":null,"recordIdParam":"id","mode":"auto","allowCreate":true,"allowDelete":false,"submitLabel":"Save"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-field":"name","x-index":0},"submit":{"type":"void","title":"Submit","x-component":"Button","x-component-props":{"type":"primary","htmlType":"submit"},"x-index":1}}}
         """.Trim()),
         new BlockTemplateSeed("Record table block", "block", """
-        {"type":"array","name":"tableBlock","title":"Records","x-component":"Table","x-component-props":{"columns":[{"title":"Name","dataIndex":"name"},{"title":"Status","dataIndex":"status"}],"dataSource":[]}}
+        {"type":"array","name":"tableBlock","title":"Records","x-component":"TableBlock","x-component-props":{"title":"Records","tableId":null,"allowCreate":true,"allowEdit":true,"allowDelete":true,"pageSize":10,"columns":[]}}
         """.Trim()),
         new BlockTemplateSeed("Detail card block", "block", """
-        {"type":"void","name":"detailCardBlock","title":"Record details","x-component":"Card","x-component-props":{"title":"Record details"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-index":0},"email":{"type":"string","title":"Email","x-component":"Input","x-index":1}}}
+        {"type":"void","name":"detailCardBlock","title":"Record details","x-component":"DetailCard","x-component-props":{"title":"Record details","bordered":true,"tableId":null,"recordIdParam":"id","allowEdit":true,"allowDelete":true,"layout":"vertical"},"properties":{"name":{"type":"string","title":"Name","x-component":"Input","x-field":"name","x-index":0},"email":{"type":"string","title":"Email","x-component":"Input","x-field":"email","x-index":1}}}
         """.Trim()),
     };
 

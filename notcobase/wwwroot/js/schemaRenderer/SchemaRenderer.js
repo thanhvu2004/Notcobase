@@ -10,6 +10,7 @@
     DesignerStore,
     SchemaUtils,
     useDesignerStore,
+    BlockComponents,
   } = window.Notcobase;
 
   function getRequired(schema, name) {
@@ -73,6 +74,8 @@
   }
 
   function renderProperties(schema, context) {
+    const insideFormBlock = SchemaUtils.isFormLikeBlock(schema) || context.insideFormBlock;
+
     return SchemaUtils.sortSchemaEntries(schema.properties).map(([propertyName, propertySchema]) =>
       renderSchemaNode(propertySchema, {
         ...context,
@@ -80,6 +83,7 @@
         parentSchema: schema,
         path: [...context.path, propertyName],
         isRoot: false,
+        insideFormBlock,
       }),
     );
   }
@@ -115,6 +119,16 @@
     };
     const childNodes = renderProperties(schema, context);
 
+    const BlockComponent = BlockComponents?.[componentName];
+    if (BlockComponent) {
+      return h(BlockComponent, {
+        schema,
+        context,
+        props,
+        children: componentName === "TableBlock" ? null : childNodes,
+      });
+    }
+
     if (!Component) {
       return h(Alert, {
         type: "warning",
@@ -149,7 +163,11 @@
     }
 
     if (componentName === "Button" || componentName === "Action") {
-      return h(Component, props, props.children || schema.title || "Action");
+      const buttonProps = { ...props };
+      if (context.insideFormBlock && buttonProps.htmlType === "submit") {
+        buttonProps.htmlType = "button";
+      }
+      return h(Component, buttonProps, buttonProps.children || schema.title || "Action");
     }
 
     if (componentName === "Form") {
@@ -164,16 +182,10 @@
   }
 
   function renderWithDecorator(schema, node, context) {
-    if (context.skipDecorator) {
-      return node;
-    }
-
-    const decoratorName = schema["x-decorator"];
-    const decoratorProps = { ...(schema["x-decorator-props"] || {}) };
     const componentName = SchemaUtils.inferComponent(schema);
     const registryItem = ComponentRegistry.getComponent(componentName);
 
-    if (!decoratorName && context.name && context.parentSchema?.type === "object" && SchemaUtils.inferComponent(context.parentSchema) === "Form" && registryItem?.field) {
+    if (!schema["x-decorator"] && context.name && context.parentSchema && SchemaUtils.isFormLikeBlock(context.parentSchema) && registryItem?.field) {
       return h(
         Form.Item,
         {
@@ -188,11 +200,14 @@
               message: `${schema.title || context.name} is required`,
             },
           ],
-          valuePropName: getFormItemValuePropName(componentName),
+          ...(getFormItemValuePropName(componentName) ? { valuePropName: getFormItemValuePropName(componentName) } : {}),
         },
         node,
       );
     }
+
+    const decoratorName = schema["x-decorator"];
+    const decoratorProps = { ...(schema["x-decorator-props"] || {}) };
 
     if (!decoratorName) {
       return node;
@@ -213,7 +228,10 @@
       props.label = props.label || schema.title || context.name;
       props.tooltip = props.tooltip || schema.description;
       props.required = props.required ?? (getRequired(context.parentSchema, context.name) || schema.required === true);
-      props.valuePropName = props.valuePropName || getFormItemValuePropName(componentName);
+      const valuePropName = getFormItemValuePropName(componentName);
+      if (!props.valuePropName && valuePropName) {
+        props.valuePropName = valuePropName;
+      }
     } else if (decoratorName === "CardItem") {
       props.title = props.title || schema.title;
       props.size = props.size || "small";
@@ -327,7 +345,7 @@
     return h(DesignerNodeFrame, { key: schema.id, schema, context }, node);
   }
 
-  function SchemaRenderer({ schema, initialValues, mode, onNodeSelect, onMoveNode, onDeleteNode, onSubmit, onValuesChange, formProps }) {
+  function SchemaRenderer({ schema, initialValues, mode, runtimeContext, onNodeSelect, onMoveNode, onDeleteNode, onRecordSaved, onRecordDeleted, onSubmit, onValuesChange, formProps }) {
     const [form] = Form.useForm();
     const normalizedSchema = useMemo(() => SchemaUtils.ensureNodeIds(schema || {}), [schema]);
 
@@ -366,8 +384,11 @@
         form,
         rootProps,
         mode: mode || "runtime",
+        runtimeContext,
         onMoveNode,
         onDeleteNode,
+        onRecordSaved,
+        onRecordDeleted,
         isRoot: true,
         skipDecorator: true,
       }),
