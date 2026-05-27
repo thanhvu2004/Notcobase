@@ -227,6 +227,8 @@
     const hoveredNodeId = useDesignerStore((state) => state.hoveredNodeId);
     const isSelected = selectedNodeId === schema.id;
     const isHovered = hoveredNodeId === schema.id;
+    const canDelete = !context.isRoot && Boolean(context.onDeleteNode);
+    const showDelete = canDelete && (isHovered || isSelected);
     const className = [
       "schema-designer-node",
       isSelected ? "is-selected" : "",
@@ -237,6 +239,13 @@
     function handleSelect(event) {
       event.stopPropagation();
       DesignerStore.getState().setSelectedNodeId(schema.id);
+    }
+
+    function handleDelete(event) {
+      event.stopPropagation();
+      event.preventDefault();
+      context.onDeleteNode?.(schema.id);
+      DesignerStore.getState().clearInteractionState();
     }
 
     function handleDragStart(event) {
@@ -282,7 +291,24 @@
         },
         onDrop: handleDrop,
       },
-      h("div", { className: "schema-designer-node-label" }, schema.title || context.name || SchemaUtils.inferComponent(schema)),
+      h(
+        "div",
+        { className: "schema-designer-node-header" },
+        h("span", { className: "schema-designer-node-label" }, schema.title || context.name || SchemaUtils.inferComponent(schema)),
+        showDelete &&
+          h(
+            "button",
+            {
+              type: "button",
+              className: "schema-designer-node-delete",
+              title: "Remove component",
+              "aria-label": "Remove component",
+              onClick: handleDelete,
+              onMouseDown: (event) => event.stopPropagation(),
+            },
+            "×",
+          ),
+      ),
       children,
     );
   }
@@ -301,7 +327,7 @@
     return h(DesignerNodeFrame, { key: schema.id, schema, context }, node);
   }
 
-  function SchemaRenderer({ schema, initialValues, mode, onNodeSelect, onMoveNode, onSubmit, onValuesChange, formProps }) {
+  function SchemaRenderer({ schema, initialValues, mode, onNodeSelect, onMoveNode, onDeleteNode, onSubmit, onValuesChange, formProps }) {
     const [form] = Form.useForm();
     const normalizedSchema = useMemo(() => SchemaUtils.ensureNodeIds(schema || {}), [schema]);
 
@@ -341,6 +367,7 @@
         rootProps,
         mode: mode || "runtime",
         onMoveNode,
+        onDeleteNode,
         isRoot: true,
         skipDecorator: true,
       }),

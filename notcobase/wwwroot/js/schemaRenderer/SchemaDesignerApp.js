@@ -186,6 +186,18 @@
       handleSchemaChange(SchemaUtils.moveNode(schema, sourceId, targetId, placement));
     }
 
+    function deleteNode(nodeId) {
+      const result = SchemaUtils.removeNode(schema, nodeId);
+
+      if (!result.removed) {
+        message.warning("Cannot remove the root component");
+        return;
+      }
+
+      handleSchemaChange(result.schema);
+      DesignerStore.getState().clearInteractionState();
+    }
+
     if (loading) {
       return h("div", { className: "schema-designer-loading" }, h(Spin), h(Typography.Text, null, "Loading schema..."));
     }
@@ -213,7 +225,6 @@
             h(
               Space,
               { wrap: true },
-              h(Typography.Title, { level: 3 }, "Low-Code Designer"),
               h(Select, {
                 className: "schema-page-select",
                 value: activePageId,
@@ -254,6 +265,7 @@
                 schema,
                 mode,
                 onMoveNode: moveNode,
+                onDeleteNode: deleteNode,
                 onSubmit: (values) => {
                   setSubmittedValues(values);
                   message.success("Form submitted");

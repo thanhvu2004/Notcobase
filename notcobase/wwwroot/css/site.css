@@ -129,27 +129,56 @@ body {
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
 }
 
+.schema-designer-node-header {
+  align-items: center;
+  display: none;
+  gap: 4px;
+  left: 6px;
+  position: absolute;
+  right: 6px;
+  top: -7px;
+  z-index: 2;
+}
+
+.schema-designer-node.is-hovered > .schema-designer-node-header,
+.schema-designer-node.is-selected > .schema-designer-node-header {
+  display: flex;
+}
+
 .schema-designer-node-label {
   background: #1677ff;
   border-radius: 4px;
   color: #fff;
-  display: none;
+  flex: 0 1 auto;
   font-size: 11px;
-  left: 6px;
   line-height: 1;
-  max-width: calc(100% - 12px);
+  max-width: calc(100% - 28px);
   overflow: hidden;
   padding: 3px 5px;
-  position: absolute;
   text-overflow: ellipsis;
-  top: -7px;
   white-space: nowrap;
-  z-index: 2;
 }
 
-.schema-designer-node.is-hovered > .schema-designer-node-label,
-.schema-designer-node.is-selected > .schema-designer-node-label {
-  display: block;
+.schema-designer-node-delete {
+  align-items: center;
+  background: #ff4d4f;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 14px;
+  height: 20px;
+  justify-content: center;
+  line-height: 1;
+  margin-left: auto;
+  padding: 0;
+  width: 20px;
+}
+
+.schema-designer-node-delete:hover {
+  background: #cf1322;
 }
 
 .schema-property-actions {
