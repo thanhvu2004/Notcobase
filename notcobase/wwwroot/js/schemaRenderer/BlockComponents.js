@@ -439,7 +439,7 @@
         setError("");
         const [details, rows] = await Promise.all([
           TablesApi.get(tableId),
-          RecordsApi.list(tableId, { limit: pageSize }),
+          RecordsApi.list(tableId),
         ]);
         setTableDetails(details);
         setRecords(rows.map((row) => ({ ...row.data, id: row.id, __recordId: row.id })));
