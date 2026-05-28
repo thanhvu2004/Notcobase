@@ -100,7 +100,7 @@ body {
 }
 
 .schema-designer-canvas-card .ant-card-body {
-  min-height: 680px;
+  min-height: fit-content;
 }
 
 .schema-renderer-designer {

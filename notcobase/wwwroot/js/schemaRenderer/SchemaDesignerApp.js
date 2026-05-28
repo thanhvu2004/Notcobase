@@ -261,6 +261,13 @@
                 value: schemaText,
                 spellCheck: false,
                 onChange: handleSchemaTextChange,
+                ref: (el) => {
+                  if (el) {
+                    const textarea = el.resizableTextArea?.textArea || el;
+                    textarea.style.height = "auto";
+                    textarea.style.height = `${textarea.scrollHeight + 3}px`;
+                  }
+                },
               }),
               schemaError && h(Typography.Text, { type: "danger" }, schemaError),
             ),
