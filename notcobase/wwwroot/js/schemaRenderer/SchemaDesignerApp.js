@@ -68,7 +68,7 @@
     const [pageName, setPageName] = useState("Customer form");
     const [schema, setSchema] = useState(defaultSchema);
     const [schemaText, setSchemaText] = useState(JSON.stringify(defaultSchema, null, 2));
-    const [mode, setMode] = useState("designer");
+    const [mode, setMode] = useState("runtime");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [schemaError, setSchemaError] = useState("");
@@ -252,8 +252,8 @@
           ),
           h(
             "div",
-            { className: "schema-designer-grid" },
-            h(
+            { className: mode === "designer" ? "schema-designer-grid" : "none" },
+            mode === "designer" && h(
               Card,
               { title: "Schema JSON", size: "small", className: "schema-designer-json-panel" },
               h(Input.TextArea, {
@@ -301,7 +301,7 @@
                 ),
               submittedValues && h("pre", { className: "schema-demo-output" }, JSON.stringify(submittedValues, null, 2)),
             ),
-            h(PropertyPanel, {
+            mode === "designer" && h(PropertyPanel, {
               schema,
               tables,
               onSchemaChange: handleSchemaChange,
