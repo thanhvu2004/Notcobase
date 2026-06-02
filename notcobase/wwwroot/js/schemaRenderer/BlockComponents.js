@@ -53,6 +53,72 @@
     }
   }
 
+  function getBlockColumnKey(column) {
+    const dataIndex = Array.isArray(column.dataIndex) ? column.dataIndex.join(".") : column.dataIndex;
+    return String(column.key ?? dataIndex ?? column.title);
+  }
+
+  function getBlockColumnDataIndex(column) {
+    return Array.isArray(column.dataIndex) ? column.dataIndex.join(".") : column.dataIndex || column.key;
+  }
+
+  function formatBlockTableValue(value) {
+    if (Array.isArray(value)) {
+      return value.join(", ");
+    }
+
+    if (value === true) {
+      return "Yes";
+    }
+
+    if (value === false) {
+      return "No";
+    }
+
+    return String(value ?? "");
+  }
+
+  function compareBlockTableValues(left, right, dataIndex) {
+    const leftValue = left?.[dataIndex];
+    const rightValue = right?.[dataIndex];
+    const leftNumber = Number(leftValue);
+    const rightNumber = Number(rightValue);
+
+    if (leftValue == null || leftValue === "") {
+      return rightValue == null || rightValue === "" ? 0 : 1;
+    }
+
+    if (rightValue == null || rightValue === "") {
+      return -1;
+    }
+
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+      return leftNumber - rightNumber;
+    }
+
+    return formatBlockTableValue(leftValue).localeCompare(formatBlockTableValue(rightValue), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  function TableBlockColumnMenu({ column, columnKey, sortState, onOpenMenu }) {
+    const sorted = sortState.columnKey === columnKey;
+
+    return h(
+      Button,
+      {
+        size: "small",
+        type: "text",
+        className: `records-column-menu-toggle ${sorted ? "is-active" : ""}`,
+        "aria-label": `${column.title} column options`,
+        title: `${column.title} column options`,
+        onClick: (event) => onOpenMenu(columnKey, event),
+      },
+      "⋮",
+    );
+  }
+
   function DetailCardBlock({ schema, context, props, children }) {
     const config = BlockUtils.getBlockConfig(schema);
     const tableId = config.tableId;
@@ -392,6 +458,11 @@
     const [form] = Form.useForm();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
+    const [sortState, setSortState] = useState({ columnKey: null, direction: null });
+    const [filters, setFilters] = useState({});
+    const [hiddenColumns, setHiddenColumns] = useState({});
+    const [showColumnManager, setShowColumnManager] = useState(false);
+    const [activeMenu, setActiveMenu] = useState(null);
     const designer = isDesignerMode(context);
 
     const formFields = useMemo(
@@ -399,18 +470,107 @@
       [tableDetails],
     );
 
-    const columns = useMemo(() => {
-      const baseColumns = BlockUtils.buildColumnsFromTable(tableDetails, config.columns).map((column) => ({
+    const baseColumns = useMemo(() => {
+      return BlockUtils.buildColumnsFromTable(tableDetails, config.columns).map((column) => ({
         ...column,
+        key: getBlockColumnKey(column),
         render: (value) => (value == null || value === "" ? "—" : String(value)),
       }));
+    }, [tableDetails, config.columns]);
+
+    const columnKeys = useMemo(() => baseColumns.map(getBlockColumnKey), [baseColumns]);
+    const columnSignature = columnKeys.join("|");
+
+    useEffect(() => {
+      const validKeys = new Set(columnKeys);
+
+      setFilters((current) => {
+        const next = {};
+        Object.entries(current).forEach(([key, value]) => {
+          if (validKeys.has(key) && value) {
+            next[key] = value;
+          }
+        });
+        return next;
+      });
+
+      setHiddenColumns((current) => {
+        const next = {};
+        Object.entries(current).forEach(([key, value]) => {
+          if (validKeys.has(key) && value) {
+            next[key] = value;
+          }
+        });
+        return next;
+      });
+
+      setSortState((current) => validKeys.has(current.columnKey) ? current : { columnKey: null, direction: null });
+    }, [columnSignature]);
+
+    useEffect(() => {
+      if (!activeMenu) {
+        return undefined;
+      }
+
+      function handleWindowChange() {
+        setActiveMenu(null);
+      }
+
+      window.addEventListener("resize", handleWindowChange);
+      window.addEventListener("scroll", handleWindowChange, true);
+
+      return () => {
+        window.removeEventListener("resize", handleWindowChange);
+        window.removeEventListener("scroll", handleWindowChange, true);
+      };
+    }, [activeMenu]);
+
+    const visibleBaseColumns = useMemo(
+      () => baseColumns.filter((column) => !hiddenColumns[getBlockColumnKey(column)]),
+      [baseColumns, hiddenColumns],
+    );
+
+    const columns = useMemo(() => {
+      const enhancedColumns = visibleBaseColumns.map((column) => {
+        const columnKey = getBlockColumnKey(column);
+        const sorted = sortState.columnKey === columnKey ? sortState.direction : null;
+        const filtered = Boolean(filters[columnKey]);
+        const titleText = column.title || getBlockColumnDataIndex(column);
+
+        return {
+          ...column,
+          title: h(
+            "div",
+            { className: "records-table-heading-content schema-table-block-heading" },
+            h("span", { className: "records-table-heading-label" }, titleText),
+            h(
+              "button",
+              {
+                type: "button",
+                className: `records-quick-sort ${sorted ? "is-active" : ""}`,
+                "aria-label": `Quick sort ${titleText}`,
+                title: sorted === "asc" ? "Sorted ascending. Click for descending." : sorted === "desc" ? "Sorted descending. Click to clear." : "Sort ascending",
+                onClick: () => toggleQuickSort(columnKey),
+              },
+              sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : "↕",
+            ),
+            filtered && h("span", { className: "records-filter-indicator" }, "Filtered"),
+            h(TableBlockColumnMenu, {
+              column: { ...column, title: titleText },
+              columnKey,
+              sortState,
+              onOpenMenu: openColumnMenu,
+            }),
+          ),
+        };
+      });
 
       if (designer || (!config.allowEdit && !config.allowDelete)) {
-        return baseColumns;
+        return enhancedColumns;
       }
 
       return [
-        ...baseColumns,
+        ...enhancedColumns,
         {
           title: "Actions",
           key: "__actions",
@@ -427,7 +587,7 @@
           ),
         },
       ];
-    }, [tableDetails, config, designer]);
+    }, [visibleBaseColumns, sortState, filters, designer, config.allowEdit, config.allowDelete]);
 
     async function loadData() {
       if (!tableId) {
@@ -513,65 +673,359 @@
       }
     }
 
+    function setColumnSort(columnKey, direction) {
+      setSortState((current) =>
+        current.columnKey === columnKey && current.direction === direction
+          ? { columnKey: null, direction: null }
+          : { columnKey, direction },
+      );
+    }
+
+    function toggleQuickSort(columnKey) {
+      setSortState((current) => {
+        if (current.columnKey !== columnKey) {
+          return { columnKey, direction: "asc" };
+        }
+
+        if (current.direction === "asc") {
+          return { columnKey, direction: "desc" };
+        }
+
+        return { columnKey: null, direction: null };
+      });
+    }
+
+    function setColumnFilter(columnKey, value) {
+      setFilters((current) => ({
+        ...current,
+        [columnKey]: value,
+      }));
+    }
+
+    function clearColumn(columnKey) {
+      setFilters((current) => {
+        const next = { ...current };
+        delete next[columnKey];
+        return next;
+      });
+
+      setSortState((current) => current.columnKey === columnKey ? { columnKey: null, direction: null } : current);
+    }
+
+    function hideColumn(columnKey) {
+      if (visibleBaseColumns.length <= 1) {
+        return;
+      }
+
+      setHiddenColumns((current) => ({ ...current, [columnKey]: true }));
+    }
+
+    function toggleColumn(columnKey, checked) {
+      if (!checked && visibleBaseColumns.length <= 1) {
+        return;
+      }
+
+      setHiddenColumns((current) => {
+        const next = { ...current };
+
+        if (checked) {
+          delete next[columnKey];
+        } else {
+          next[columnKey] = true;
+        }
+
+        return next;
+      });
+    }
+
+    function showAllColumns() {
+      setHiddenColumns({});
+    }
+
+    function clearAllControls() {
+      setSortState({ columnKey: null, direction: null });
+      setFilters({});
+      setHiddenColumns({});
+    }
+
+    function openColumnMenu(columnKey, event) {
+      event.stopPropagation();
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = 232;
+      const left = Math.min(rect.left, window.innerWidth - menuWidth - 8);
+
+      setActiveMenu((current) =>
+        current?.columnKey === columnKey
+          ? null
+          : {
+              columnKey,
+              left: Math.max(8, left),
+              top: rect.bottom + 6,
+              width: menuWidth,
+            },
+      );
+    }
+
+    function closeColumnMenu() {
+      setActiveMenu(null);
+    }
+
+    function runMenuAction(action) {
+      action();
+      closeColumnMenu();
+    }
+
     const dataSource = designer
       ? (config.previewData || props.dataSource || [])
       : records;
 
-    return h(
-      Card,
-      {
-        title: props.title || schema.title || "Table block",
-        bordered: props.bordered !== false,
-        extra: !designer && config.allowCreate !== false && tableId
-          ? h(Button, { type: "primary", size: "small", onClick: openCreate }, "Add record")
-          : null,
-        className: "schema-block schema-block-table",
-      },
-      designer && h(BlockStatusBanner, {
-        type: "info",
-        message: "TableBlock",
-        extra: tableId ? `Table #${tableId}` : "Configure a data source table in properties.",
-      }),
-      !designer && !tableId && h(BlockStatusBanner, { type: "warning", message: "Select a data source table for this block." }),
-      error && h(BlockStatusBanner, { type: "error", message: error }),
-      h(Table, {
-        rowKey: "id",
-        size: props.size || "small",
-        loading,
-        columns,
-        dataSource,
-        pagination: { pageSize },
-      }),
-      h(
-        Modal,
-        {
-          title: editingRecord ? "Edit record" : "Create record",
-          open: modalOpen,
-          onCancel: () => setModalOpen(false),
-          onOk: handleModalSubmit,
-          confirmLoading: saving,
-          destroyOnClose: true,
-        },
-        formFields.length
-          ? h(
-            Form,
-            { form, layout: "vertical" },
-            formFields.map((field) =>
-              h(
-                Form.Item,
-                {
-                  key: field.name,
-                  name: field.name,
-                  label: field.label,
-                  rules: field.required ? [{ required: true, message: `${field.label} is required` }] : [],
-                  valuePropName: field.fieldType === "boolean" ? "checked" : "value",
-                },
-                renderFieldInput(field),
-              ),
+    const displayDataSource = useMemo(() => {
+      const filteredRows = dataSource.filter((record) =>
+        baseColumns.every((column) => {
+          const columnKey = getBlockColumnKey(column);
+          const filterValue = filters[columnKey];
+
+          if (!filterValue) {
+            return true;
+          }
+
+          const dataIndex = getBlockColumnDataIndex(column);
+          return formatBlockTableValue(record?.[dataIndex])
+            .toLowerCase()
+            .includes(filterValue.toLowerCase());
+        }),
+      );
+
+      if (!sortState.columnKey || !sortState.direction) {
+        return filteredRows;
+      }
+
+      const sortColumn = baseColumns.find((column) => getBlockColumnKey(column) === sortState.columnKey);
+      if (!sortColumn) {
+        return filteredRows;
+      }
+
+      const dataIndex = getBlockColumnDataIndex(sortColumn);
+      return [...filteredRows].sort((left, right) => {
+        const result = compareBlockTableValues(left, right, dataIndex);
+        return sortState.direction === "asc" ? result : -result;
+      });
+    }, [baseColumns, dataSource, filters, sortState]);
+
+    const activeFilterCount = Object.values(filters).filter(Boolean).length;
+
+    function renderActiveColumnMenu() {
+      if (!activeMenu || !window.ReactDOM?.createPortal) {
+        return null;
+      }
+
+      const column = baseColumns.find((item) => getBlockColumnKey(item) === activeMenu.columnKey);
+      if (!column) {
+        return null;
+      }
+
+      const columnKey = activeMenu.columnKey;
+      const titleText = column.title || getBlockColumnDataIndex(column);
+      const isSorted = sortState.columnKey === columnKey;
+      const filterValue = filters[columnKey] || "";
+
+      return window.ReactDOM.createPortal(
+        h(
+          React.Fragment,
+          null,
+          h("button", {
+            type: "button",
+            className: "records-column-menu-backdrop",
+            "aria-label": "Close column menu",
+            onClick: closeColumnMenu,
+          }),
+          h(
+            "div",
+            {
+              className: "records-column-menu-panel",
+              style: {
+                left: activeMenu.left,
+                top: activeMenu.top,
+                width: activeMenu.width,
+              },
+              onClick: (event) => event.stopPropagation(),
+            },
+            h("div", { className: "records-column-menu-title" }, titleText),
+            h(
+              "button",
+              {
+                type: "button",
+                className: `records-column-menu-item ${isSorted && sortState.direction === "asc" ? "active" : ""}`,
+                onClick: () => runMenuAction(() => setColumnSort(columnKey, "asc")),
+              },
+              "Sort ascending",
             ),
-          )
-          : h(Typography.Text, { type: "secondary" }, "No columns configured for this table."),
+            h(
+              "button",
+              {
+                type: "button",
+                className: `records-column-menu-item ${isSorted && sortState.direction === "desc" ? "active" : ""}`,
+                onClick: () => runMenuAction(() => setColumnSort(columnKey, "desc")),
+              },
+              "Sort descending",
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "records-column-menu-item",
+                disabled: !isSorted && !filterValue,
+                onClick: () => runMenuAction(() => clearColumn(columnKey)),
+              },
+              "Clear sort/filter",
+            ),
+            h("div", { className: "records-column-menu-divider" }),
+            h("label", { className: "form-label records-column-filter-label", htmlFor: `schema-filter-${columnKey}` }, "Filter"),
+            h("input", {
+              id: `schema-filter-${columnKey}`,
+              type: "search",
+              className: "form-control form-control-sm",
+              placeholder: "Contains...",
+              value: filterValue,
+              onChange: (event) => setColumnFilter(columnKey, event.target.value),
+            }),
+            h("div", { className: "records-column-menu-divider" }),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "records-column-menu-item",
+                disabled: visibleBaseColumns.length <= 1,
+                onClick: () => runMenuAction(() => hideColumn(columnKey)),
+              },
+              "Hide column",
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "records-column-menu-item",
+                onClick: () => runMenuAction(() => setShowColumnManager(true)),
+              },
+              "Manage columns",
+            ),
+          ),
+        ),
+        document.body,
+      );
+    }
+
+    return h(
+      React.Fragment,
+      null,
+      h(
+        Card,
+        {
+          title: props.title || schema.title || "Table block",
+          bordered: props.bordered !== false,
+          extra: !designer && config.allowCreate !== false && tableId
+            ? h(Button, { type: "primary", size: "small", onClick: openCreate }, "Add record")
+            : null,
+          className: "schema-block schema-block-table",
+        },
+        designer && h(BlockStatusBanner, {
+          type: "info",
+          message: "TableBlock",
+          extra: tableId ? `Table #${tableId}` : "Configure a data source table in properties.",
+        }),
+        !designer && !tableId && h(BlockStatusBanner, { type: "warning", message: "Select a data source table for this block." }),
+        error && h(BlockStatusBanner, { type: "error", message: error }),
+        h(
+          "div",
+          { className: "records-table-toolbar schema-table-block-toolbar" },
+          h("div", { className: "text-muted small" }, `${displayDataSource.length} of ${dataSource.length} records`, activeFilterCount > 0 && `, ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"}`),
+          h(
+            Space,
+            { size: 8 },
+            h(Button, {
+              size: "small",
+              onClick: clearAllControls,
+              disabled: !sortState.columnKey && activeFilterCount === 0 && visibleBaseColumns.length === baseColumns.length,
+            }, "Reset view"),
+            h(Button, {
+              size: "small",
+              onClick: () => setShowColumnManager((value) => !value),
+            }, "Manage columns"),
+          ),
+        ),
+        showColumnManager && h(
+          "div",
+          { className: "records-column-manager schema-table-block-column-manager" },
+          h(
+            "div",
+            { className: "records-column-manager-header" },
+            h("span", { className: "fw-semibold" }, "Columns"),
+            h(Button, { type: "link", size: "small", onClick: showAllColumns }, "Show all"),
+          ),
+          h(
+            "div",
+            { className: "records-column-manager-list" },
+            baseColumns.map((column) => {
+              const columnKey = getBlockColumnKey(column);
+              const checked = !hiddenColumns[columnKey];
+              const titleText = column.title || getBlockColumnDataIndex(column);
+
+              return h(
+                "label",
+                { key: columnKey, className: "records-column-manager-item" },
+                h("input", {
+                  type: "checkbox",
+                  className: "form-check-input",
+                  checked,
+                  disabled: checked && visibleBaseColumns.length <= 1,
+                  onChange: (event) => toggleColumn(columnKey, event.target.checked),
+                }),
+                h("span", null, titleText),
+              );
+            }),
+          ),
+        ),
+        h(Table, {
+          rowKey: "id",
+          size: props.size || "small",
+          loading,
+          columns,
+          dataSource: displayDataSource,
+          pagination: { pageSize },
+        }),
+        h(
+          Modal,
+          {
+            title: editingRecord ? "Edit record" : "Create record",
+            open: modalOpen,
+            onCancel: () => setModalOpen(false),
+            onOk: handleModalSubmit,
+            confirmLoading: saving,
+            destroyOnClose: true,
+          },
+          formFields.length
+            ? h(
+              Form,
+              { form, layout: "vertical" },
+              formFields.map((field) =>
+                h(
+                  Form.Item,
+                  {
+                    key: field.name,
+                    name: field.name,
+                    label: field.label,
+                    rules: field.required ? [{ required: true, message: `${field.label} is required` }] : [],
+                    valuePropName: field.fieldType === "boolean" ? "checked" : "value",
+                  },
+                  renderFieldInput(field),
+                ),
+              ),
+            )
+            : h(Typography.Text, { type: "secondary" }, "No columns configured for this table."),
+        ),
       ),
+      renderActiveColumnMenu(),
     );
   }
 
