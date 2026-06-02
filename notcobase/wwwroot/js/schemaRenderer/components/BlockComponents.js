@@ -7,6 +7,7 @@
     Alert,
     Button,
     Card,
+    Checkbox,
     Empty,
     Form,
     Input,
@@ -62,7 +63,41 @@
     return Array.isArray(column.dataIndex) ? column.dataIndex.join(".") : column.dataIndex || column.key;
   }
 
-  function formatBlockTableValue(value) {
+  function parseBlockListValue(value) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (typeof value !== "string") {
+      return value == null || value === "" ? [] : [value];
+    }
+
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [value];
+    } catch {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  function isTruthyBlockValue(value) {
+    return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
+  }
+
+  function formatBlockTableValue(value, fieldType) {
+    const type = String(fieldType || "").toLowerCase();
+
+    if (type === "checkbox" || type === "boolean") {
+      return isTruthyBlockValue(value) ? "Yes" : "No";
+    }
+
+    if (type === "list") {
+      return parseBlockListValue(value).join(", ");
+    }
+
     if (Array.isArray(value)) {
       return value.join(", ");
     }
@@ -78,7 +113,18 @@
     return String(value ?? "");
   }
 
-  function compareBlockTableValues(left, right, dataIndex) {
+  function renderBlockTableValue(value, fieldType) {
+    const type = String(fieldType || "").toLowerCase();
+
+    if (type === "checkbox" || type === "boolean") {
+      return h(Checkbox, { checked: isTruthyBlockValue(value), disabled: true });
+    }
+
+    const displayValue = formatBlockTableValue(value, fieldType);
+    return displayValue === "" ? "—" : displayValue;
+  }
+
+  function compareBlockTableValues(left, right, dataIndex, fieldType) {
     const leftValue = left?.[dataIndex];
     const rightValue = right?.[dataIndex];
     const leftNumber = Number(leftValue);
@@ -96,7 +142,7 @@
       return leftNumber - rightNumber;
     }
 
-    return formatBlockTableValue(leftValue).localeCompare(formatBlockTableValue(rightValue), undefined, {
+    return formatBlockTableValue(leftValue, fieldType).localeCompare(formatBlockTableValue(rightValue, fieldType), undefined, {
       numeric: true,
       sensitivity: "base",
     });
@@ -471,11 +517,22 @@
     );
 
     const baseColumns = useMemo(() => {
-      return BlockUtils.buildColumnsFromTable(tableDetails, config.columns).map((column) => ({
-        ...column,
-        key: getBlockColumnKey(column),
-        render: (value) => (value == null || value === "" ? "—" : String(value)),
-      }));
+      const tableColumnMap = new Map(
+        (tableDetails?.columns || []).map((column) => [String(column.name).toLowerCase(), column]),
+      );
+
+      return BlockUtils.buildColumnsFromTable(tableDetails, config.columns).map((column) => {
+        const dataIndex = getBlockColumnDataIndex(column);
+        const tableColumn = tableColumnMap.get(String(dataIndex || column.title).toLowerCase());
+        const fieldType = column.fieldType || tableColumn?.fieldType;
+
+        return {
+          ...column,
+          fieldType,
+          key: getBlockColumnKey(column),
+          render: (value) => renderBlockTableValue(value, fieldType),
+        };
+      });
     }, [tableDetails, config.columns]);
 
     const columnKeys = useMemo(() => baseColumns.map(getBlockColumnKey), [baseColumns]);
@@ -791,7 +848,7 @@
           }
 
           const dataIndex = getBlockColumnDataIndex(column);
-          return formatBlockTableValue(record?.[dataIndex])
+          return formatBlockTableValue(record?.[dataIndex], column.fieldType)
             .toLowerCase()
             .includes(filterValue.toLowerCase());
         }),
@@ -808,7 +865,7 @@
 
       const dataIndex = getBlockColumnDataIndex(sortColumn);
       return [...filteredRows].sort((left, right) => {
-        const result = compareBlockTableValues(left, right, dataIndex);
+        const result = compareBlockTableValues(left, right, dataIndex, sortColumn.fieldType);
         return sortState.direction === "asc" ? result : -result;
       });
     }, [baseColumns, dataSource, filters, sortState]);
