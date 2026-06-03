@@ -1,20 +1,24 @@
 using Microsoft.EntityFrameworkCore;
 using notcobase.Data;
 using notcobase.Models;
+using notcobase.Services.Seeding;
 
 namespace notcobase.Services;
 
 public class DatabaseSeeder
 {
     private readonly AppDbContext _context;
+    private readonly MetadataSeeder _metadataSeeder;
 
-    public DatabaseSeeder(AppDbContext context)
+    public DatabaseSeeder(AppDbContext context, MetadataSeeder metadataSeeder)
     {
         _context = context;
+        _metadataSeeder = metadataSeeder;
     }
 
     public async Task SeedAsync()
     {
+        await _context.Database.MigrateAsync();
         // Create permissions if they don't exist
         var permissions = new[]
         {
@@ -114,5 +118,7 @@ public class DatabaseSeeder
             _context.UserRoles.Add(userRole);
             await _context.SaveChangesAsync();
         }
+
+        await _metadataSeeder.SeedAsync();
     }
 }

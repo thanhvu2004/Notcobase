@@ -13,12 +13,22 @@
     }, {});
   }
 
-  function cleanListItems(value) { // ensure value is an array of non-empty trimmed strings
-    if (!Array.isArray(value)) {
-      return [];
+  function cleanListItems(value) {
+    let parsedValue = value;
+    // if value is a JSON string like '["A","B"]'
+    if (typeof parsedValue === "string") {
+      try {
+        parsedValue = JSON.parse(parsedValue);
+      } catch {
+        return [];
+      }
     }
 
-    return value
+    if (!Array.isArray(parsedValue)) {
+      return [];
+    }
+    
+    return parsedValue
       .map((item) => String(item).trim())
       .filter((item) => item.length > 0);
   }
@@ -41,7 +51,7 @@
 
   function formatRecordValue(value, fieldType) { // format value for display based on fieldType
     if (fieldType === "checkbox") {
-      return value ? "Yes" : "No";
+      return value === "1" ? "Yes" : "No";
     }
 
     if (fieldType === "list") {

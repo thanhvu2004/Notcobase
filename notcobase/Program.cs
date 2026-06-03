@@ -28,6 +28,7 @@ builder.Services.AddSession(options =>
 builder.Services.AddHttpClient();
 
 // Database Seeder
+builder.Services.AddScoped<notcobase.Services.Seeding.MetadataSeeder>();
 builder.Services.AddScoped<notcobase.Services.DatabaseSeeder>();
 
 // Dynamic Table Service
