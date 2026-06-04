@@ -174,8 +174,15 @@
 
       SchemaPagesApi.delete(activePageId)
         .then(() => {
-          setPages((items) => items.filter((item) => item.id !== activePageId));
-          createNewPage();
+          const remainingPages = pages.filter((item) => item.id !== activePageId);
+          setPages(remainingPages);
+
+          if (remainingPages.length > 0) {
+            loadPage(remainingPages[0].id);
+          } else {
+            createNewPage();
+          }
+
           message.success("Schema page deleted");
         })
         .catch((error) => message.error(error.message));
