@@ -103,6 +103,19 @@ public class LowCodePagesController : ControllerBase
         return Ok(ToDto(page));
     }
 
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeletePage(int id)
+    {
+        var page = await _context.LowCodePages.FirstOrDefaultAsync(p => p.Id == id);
+        if (page == null)        {
+            return NotFound();
+        }
+
+        _context.LowCodePages.Remove(page);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     private static string? ValidateRequest(LowCodePageRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))

@@ -42,5 +42,10 @@
         body: JSON.stringify(payload),
       });
     },
+    delete(id) {
+      return request(`/api/lowcode-pages/${id}`, {
+        method: "DELETE",
+      });
+    },
   };
 })(window);

@@ -159,6 +159,28 @@
       }
     }
 
+    function createNewPage() {
+      setActivePageId(null);
+      setPageName("Customer form");
+      setSchema(defaultSchema);
+      DesignerStore.getState().setSelectedNodeId(null);
+    }
+
+    function deleteCurrentPage() {
+      if (!activePageId) {
+        message.warning("No page to delete");
+        return;
+      }
+
+      SchemaPagesApi.delete(activePageId)
+        .then(() => {
+          setPages((items) => items.filter((item) => item.id !== activePageId));
+          createNewPage();
+          message.success("Schema page deleted");
+        })
+        .catch((error) => message.error(error.message));
+    }
+
     function handleSchemaTextChange(event) {
       const value = event.target.value;
       setSchemaText(value);
@@ -242,6 +264,8 @@
                 value: pageName,
                 onChange: (event) => setPageName(event.target.value),
               }),
+              h(Button, { onClick: createNewPage }, "New page"),
+              h(Button, { danger: true, onClick: deleteCurrentPage }, "Delete page"),
             ),
             h(
               Space,
