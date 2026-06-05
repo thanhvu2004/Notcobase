@@ -6,6 +6,7 @@ using notcobase.Data;
 using notcobase.Models;
 using notcobase.Services;
 using System.Data;
+using System.Text;
 
 namespace notcobase.Controllers;
 
@@ -45,15 +46,16 @@ public class RecordsController : ControllerBase
             var skipValue = skip ?? 0;
             var limitValue = limit ?? 100;
 
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
+            var path = await _dynamicTableService.GetTablePathAsync(tableId);
             var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
-            var columnList = BuildSelectColumnList(columns);
+            var columnList = BuildSelectColumnList(columns, path);
+            var fromClause = BuildFromClause(path);
+            var lastAlias = $"t{path.Count - 1}";
 
             var sql = $@"
-                SELECT Id{columnList}, CreatedAt, UpdatedAt
-                FROM [{physicalTableName}]
-                WHERE LogicalTableId = {tableId}
-                ORDER BY CreatedAt DESC
+                SELECT {lastAlias}.Id{columnList}, {lastAlias}.CreatedAt, {lastAlias}.UpdatedAt
+                {fromClause}
+                ORDER BY {lastAlias}.CreatedAt DESC
                 LIMIT {limitValue} OFFSET {skipValue}";
 
             var connection = _context.Database.GetDbConnection();
@@ -97,15 +99,16 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
+            var path = await _dynamicTableService.GetTablePathAsync(tableId);
             var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
-            var columnList = BuildSelectColumnList(columns);
+            var columnList = BuildSelectColumnList(columns, path);
+            var fromClause = BuildFromClause(path);
+            var lastAlias = $"t{path.Count - 1}";
 
             var sql = $@"
-                SELECT Id{columnList}, CreatedAt, UpdatedAt
-                FROM [{physicalTableName}]
-                WHERE Id = {recordId}
-                  AND LogicalTableId = {tableId}";
+                SELECT {lastAlias}.Id{columnList}, {lastAlias}.CreatedAt, {lastAlias}.UpdatedAt
+                {fromClause}
+                WHERE {lastAlias}.Id = {recordId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -145,6 +148,7 @@ public class RecordsController : ControllerBase
         if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return BadRequest("Physical table has not been created yet. Please add columns first.");
 
+        var path = await _dynamicTableService.GetTablePathAsync(tableId);
         var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
         var validationResult = ValidateRecordData(dto.Data, columns, requireMissingRequiredFields: true);
         if (!validationResult.IsValid)
@@ -152,7 +156,6 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columnNamesSet = columns
                 .Select(c => c.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -160,47 +163,67 @@ public class RecordsController : ControllerBase
             var validData = dto.Data
                 .Where(kvp => columnNamesSet.Contains(kvp.Key))
                 .Where(kvp => kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-            var columnNames = string.Join(", ", validData.Keys.Select(k => $"[{k}]"));
-            var columnValues = string.Join(", ", validData.Values.Select(v => FormatSqlValue(v)));
-            var logicalTableColumn = "[LogicalTableId]";
-            var logicalTableValue = tableId.ToString();
-            string sql;
+            var rootTable = path.First();
+            var rootPhysicalName = _dynamicTableService.GetPhysicalTableName(rootTable.Id);
+            var rootColumns = rootTable.Columns
+                .Where(c => validData.ContainsKey(c.Name))
+                .OrderBy(c => c.Id)
+                .ToList();
 
-            if (validData.Count == 0)
-            {
-                sql = $@"
-                    INSERT INTO [{physicalTableName}] ({logicalTableColumn}, CreatedAt, UpdatedAt)
-                    VALUES ({logicalTableValue}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
-            }
-            else
-            {
-                sql = $@"
-                    INSERT INTO [{physicalTableName}] ({logicalTableColumn}, {columnNames}, CreatedAt, UpdatedAt)
-                    VALUES ({logicalTableValue}, {columnValues}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
-            }
+            var rootColumnNames = string.Join(", ", rootColumns.Select(c => $"[{c.Name}]"));
+            var rootColumnValues = string.Join(", ", rootColumns.Select(c => FormatSqlValue(validData[c.Name])));
+            var insertRootSql = rootColumns.Any()
+                ? $@"INSERT INTO [{rootPhysicalName}] ({rootColumnNames}, CreatedAt, UpdatedAt) VALUES ({rootColumnValues}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                : $@"INSERT INTO [{rootPhysicalName}] (CreatedAt, UpdatedAt) VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
 
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = sql;
+                command.CommandText = insertRootSql;
                 await command.ExecuteNonQueryAsync();
             }
 
-            // Get the last inserted rowid
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "SELECT last_insert_rowid()";
                 var result = await command.ExecuteScalarAsync();
                 if (result == null || result == DBNull.Value)
                     return StatusCode(500, "Failed to get inserted record ID");
-                
-                var recordId = (long)result;
 
-                // Fetch and return the created record
+                var recordId = (long)result;
+                var recordIdValue = recordId.ToString();
+
+                for (var pathIndex = 1; pathIndex < path.Count; pathIndex++)
+                {
+                    var currentTable = path[pathIndex];
+                    var physicalTableName = _dynamicTableService.GetPhysicalTableName(currentTable.Id);
+                    var currentColumns = currentTable.Columns
+                        .Where(c => validData.ContainsKey(c.Name))
+                        .OrderBy(c => c.Id)
+                        .ToList();
+
+                    var insertColumns = new List<string> { "Id" };
+                    var insertValues = new List<string> { recordIdValue };
+
+                    if (currentColumns.Any())
+                    {
+                        insertColumns.AddRange(currentColumns.Select(c => $"[{c.Name}]"));
+                        insertValues.AddRange(currentColumns.Select(c => FormatSqlValue(validData[c.Name])));
+                    }
+
+                    insertColumns.AddRange(new[] { "CreatedAt", "UpdatedAt" });
+                    insertValues.AddRange(new[] { "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP" });
+
+                    var insertSql = $@"INSERT INTO [{physicalTableName}] ({string.Join(", ", insertColumns)}) VALUES ({string.Join(", ", insertValues)})";
+                    using var insertCommand = connection.CreateCommand();
+                    insertCommand.CommandText = insertSql;
+                    await insertCommand.ExecuteNonQueryAsync();
+                }
+
                 var getRecordResult = await GetRecord(tableId, (int)recordId);
                 return CreatedAtAction(nameof(GetRecord), new { tableId, recordId }, getRecordResult.Result);
             }
@@ -226,6 +249,7 @@ public class RecordsController : ControllerBase
         if (!await _dynamicTableService.IsPhysicalTableCreatedAsync(tableId))
             return BadRequest("Physical table does not exist");
 
+        var path = await _dynamicTableService.GetTablePathAsync(tableId);
         var columns = await _dynamicTableService.GetEffectiveColumnsAsync(tableId);
         var validationResult = ValidateRecordData(dto.Data, columns, requireMissingRequiredFields: false);
         if (!validationResult.IsValid)
@@ -233,28 +257,41 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
             var columnNamesSet = columns
                 .Select(c => c.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             var validData = dto.Data
                 .Where(kvp => columnNamesSet.Contains(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-            var setClause = validData.Count == 0
-                ? "UpdatedAt = CURRENT_TIMESTAMP"
-                : $"{string.Join(", ", validData.Select(kvp => $"[{kvp.Key}] = {FormatSqlValue(kvp.Value)}"))}, UpdatedAt = CURRENT_TIMESTAMP";
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-            var sql = $@"
-                UPDATE [{physicalTableName}]
-                SET {setClause}
-                WHERE Id = {recordId}
-                  AND LogicalTableId = {tableId}";
+            var columnsByTable = columns
+                .GroupBy(c => c.TableId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
 
-            using (var command = connection.CreateCommand())
+            foreach (var tableEntry in columnsByTable)
             {
+                var tableColumns = tableEntry.Value
+                    .Where(c => validData.ContainsKey(c.Name))
+                    .ToList();
+
+                if (!tableColumns.Any() && tableEntry.Key != tableId)
+                    continue;
+
+                var physicalTableName = _dynamicTableService.GetPhysicalTableName(tableEntry.Key);
+                var setClause = tableColumns.Any()
+                    ? $"{string.Join(", ", tableColumns.Select(c => $"[{c.Name}] = {FormatSqlValue(validData[c.Name])}"))}, UpdatedAt = CURRENT_TIMESTAMP"
+                    : "UpdatedAt = CURRENT_TIMESTAMP";
+
+                var sql = $@"
+                    UPDATE [{physicalTableName}]
+                    SET {setClause}
+                    WHERE Id = {recordId}";
+
+                using var command = connection.CreateCommand();
                 command.CommandText = sql;
                 await command.ExecuteNonQueryAsync();
             }
@@ -283,8 +320,9 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
-            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id = {recordId} AND LogicalTableId = {tableId}";
+            var path = await _dynamicTableService.GetTablePathAsync(tableId);
+            var rootPhysicalTableName = _dynamicTableService.GetPhysicalTableName(path.First().Id);
+            var sql = $"DELETE FROM [{rootPhysicalTableName}] WHERE Id = {recordId}";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -319,10 +357,11 @@ public class RecordsController : ControllerBase
 
         try
         {
-            var physicalTableName = await _dynamicTableService.GetPhysicalTableNameAsync(tableId);
+            var path = await _dynamicTableService.GetTablePathAsync(tableId);
+            var rootPhysicalTableName = _dynamicTableService.GetPhysicalTableName(path.First().Id);
             var idList = string.Join(", ", dto.RecordIds);
 
-            var sql = $"DELETE FROM [{physicalTableName}] WHERE Id IN ({idList}) AND LogicalTableId = {tableId}";
+            var sql = $"DELETE FROM [{rootPhysicalTableName}] WHERE Id IN ({idList})";
 
             var connection = _context.Database.GetDbConnection();
             await connection.OpenAsync();
@@ -343,10 +382,26 @@ public class RecordsController : ControllerBase
     }
 
     // Helper methods
-    private static string BuildSelectColumnList(IEnumerable<Column> columns)
+    private static string BuildSelectColumnList(IEnumerable<Column> columns, IReadOnlyList<Table> path)
     {
-        var columnList = string.Join(", ", columns.Select(c => $"[{c.Name}]"));
+        var aliasMap = path.Select((t, index) => (t.Id, Alias: $"t{index}"))
+            .ToDictionary(x => x.Id, x => x.Alias);
+
+        var columnList = string.Join(", ", columns.Select(c => $"{aliasMap[c.TableId]}.[{c.Name}]"));
         return string.IsNullOrWhiteSpace(columnList) ? string.Empty : $", {columnList}";
+    }
+
+    private string BuildFromClause(IReadOnlyList<Table> path)
+    {
+        var builder = new StringBuilder();
+        builder.Append($"FROM [{_dynamicTableService.GetPhysicalTableName(path[0].Id)}] AS t0");
+
+        for (var i = 1; i < path.Count; i++)
+        {
+            builder.Append($" INNER JOIN [{_dynamicTableService.GetPhysicalTableName(path[i].Id)}] AS t{i} ON t{i}.Id = t{i - 1}.Id");
+        }
+
+        return builder.ToString();
     }
 
     private RecordDto ReadRecordDto(System.Data.IDataReader reader)

@@ -18,102 +18,64 @@ public class DynamicTableService
     /// Creates a physical database table based on the metadata hierarchy.
     public async Task<bool> CreatePhysicalTableAsync(int tableId)
     {
-        try
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
+
+        if (!tableMap.TryGetValue(tableId, out var table))
+            throw new InvalidOperationException($"Table with ID {tableId} not found");
+
+        var tablesToCreate = GetTablesToCreate(table, tableMap);
+        foreach (var physicalTable in tablesToCreate)
         {
-            var tableMap = await _context.Tables
-                .Include(t => t.Columns)
-                .ToDictionaryAsync(t => t.Id);
+            if (physicalTable.PhysicalTableCreated)
+                continue;
 
-            if (!tableMap.TryGetValue(tableId, out var table))
-                throw new InvalidOperationException($"Table with ID {tableId} not found");
-
-            var rootTableId = GetRootTableId(table, tableMap);
-            var rootTable = tableMap[rootTableId];
-
-            if (rootTable.PhysicalTableCreated)
-                return true;
-
-            var physicalTableName = GetPhysicalTableName(rootTableId);
-            var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap);
-            var userColumnDefinitions = BuildColumnDefinitions(effectiveColumns);
-            var allColumnDefinitions = new List<string>
-            {
-                "Id INTEGER PRIMARY KEY AUTOINCREMENT",
-                "LogicalTableId INTEGER NOT NULL"
-            };
-
-            allColumnDefinitions.AddRange(userColumnDefinitions);
-            allColumnDefinitions.Add("CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
-            allColumnDefinitions.Add("UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
-
-            var sql = $@"
-                CREATE TABLE [{physicalTableName}] (
-                    {string.Join(",\n                    ", allColumnDefinitions)}
-                )";
-
+            var sql = BuildCreatePhysicalTableSql(physicalTable, tableMap);
             await _context.Database.ExecuteSqlRawAsync(sql);
 
-            var hierarchyTables = GetHierarchyTables(rootTableId, tableMap);
-            foreach (var hierarchyTable in hierarchyTables)
-            {
-                hierarchyTable.PhysicalTableCreated = true;
-                hierarchyTable.UpdatedAt = DateTime.UtcNow;
-                _context.Tables.Update(hierarchyTable);
-            }
-
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation($"Physical table '{physicalTableName}' created for hierarchy rooted at table ID {rootTableId}");
-            return true;
+            physicalTable.PhysicalTableCreated = true;
+            physicalTable.UpdatedAt = DateTime.UtcNow;
+            _context.Tables.Update(physicalTable);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"Failed to create physical table for table ID {tableId}");
-            throw;
-        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation($"Physical table hierarchy prepared for table ID {tableId}");
+        return true;
     }
 
-    /// Drops the physical database table for the root hierarchy.
+    /// Drops the physical database tables for a hierarchy.
     public async Task<bool> DropPhysicalTableAsync(int tableId)
     {
-        try
-        {
-            var tableMap = await _context.Tables
-                .Include(t => t.Columns)
-                .ToDictionaryAsync(t => t.Id);
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
 
-            if (!tableMap.TryGetValue(tableId, out var table))
-                throw new InvalidOperationException($"Table with ID {tableId} not found");
+        if (!tableMap.TryGetValue(tableId, out var table))
+            throw new InvalidOperationException($"Table with ID {tableId} not found");
 
-            var rootTableId = GetRootTableId(table, tableMap);
-            var rootTable = tableMap[rootTableId];
+        var rootTableId = GetRootTableId(table, tableMap);
+        var hierarchyTables = GetHierarchyTables(rootTableId, tableMap)
+            .OrderByDescending(t => GetTablePath(t, tableMap).Count)
+            .ToList();
 
-            if (!rootTable.PhysicalTableCreated)
-                return true;
-
-            var physicalTableName = GetPhysicalTableName(rootTableId);
-            var sql = $"DROP TABLE IF EXISTS [{physicalTableName}]";
-
-            await _context.Database.ExecuteSqlRawAsync(sql);
-
-            var hierarchyTables = GetHierarchyTables(rootTableId, tableMap);
-            foreach (var hierarchyTable in hierarchyTables)
-            {
-                hierarchyTable.PhysicalTableCreated = false;
-                hierarchyTable.UpdatedAt = DateTime.UtcNow;
-                _context.Tables.Update(hierarchyTable);
-            }
-
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation($"Physical table '{physicalTableName}' dropped for hierarchy rooted at table ID {rootTableId}");
+        var anyCreated = hierarchyTables.Any(t => t.PhysicalTableCreated);
+        if (!anyCreated)
             return true;
-        }
-        catch (Exception ex)
+
+        foreach (var hierarchyTable in hierarchyTables)
         {
-            _logger.LogError(ex, $"Failed to drop physical table for table ID {tableId}");
-            throw;
+            var physicalTableName = GetPhysicalTableName(hierarchyTable.Id);
+            await _context.Database.ExecuteSqlRawAsync($"DROP TABLE IF EXISTS [{physicalTableName}]");
+
+            hierarchyTable.PhysicalTableCreated = false;
+            hierarchyTable.UpdatedAt = DateTime.UtcNow;
+            _context.Tables.Update(hierarchyTable);
         }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation($"Physical table hierarchy dropped for root table ID {rootTableId}");
+        return true;
     }
 
     /// Synchronizes the physical storage when a table's inheritance metadata changes.
@@ -126,29 +88,77 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(tableId, out var table))
             throw new InvalidOperationException($"Table with ID {tableId} not found");
 
-        var newRootTableId = GetRootTableId(table, tableMap);
-        var newRootTable = tableMap[newRootTableId];
+        // Ensure the table and its ancestry are created under the new hierarchy.
+        await CreatePhysicalTableAsync(tableId);
+        return true;
+    }
 
-        if (!newRootTable.PhysicalTableCreated)
+    private List<Table> GetTablesToCreate(Table table, Dictionary<int, Table> allTables)
+    {
+        var ordered = new List<Table>();
+        ordered.AddRange(GetTablePath(table, allTables));
+
+        var descendantTables = GetHierarchyTables(table.Id, allTables);
+        foreach (var descendant in descendantTables)
         {
-            await CreatePhysicalTableAsync(tableId);
-            tableMap = await _context.Tables
-                .Include(t => t.Columns)
-                .ToDictionaryAsync(t => t.Id);
+            if (!ordered.Any(t => t.Id == descendant.Id))
+                ordered.Add(descendant);
+        }
+
+        return ordered;
+    }
+
+    private List<Table> GetTablePath(Table table, Dictionary<int, Table> allTables)
+    {
+        var path = new List<Table>();
+        while (true)
+        {
+            path.Add(table);
+
+            if (!table.InheritProperties || !table.ParentTableId.HasValue ||
+                !allTables.TryGetValue(table.ParentTableId.Value, out var parentTable))
+            {
+                break;
+            }
+
+            table = parentTable;
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    private string BuildCreatePhysicalTableSql(Table table, Dictionary<int, Table> allTables)
+    {
+        var columnDefinitions = new List<string>();
+
+        if (table.InheritProperties && table.ParentTableId.HasValue)
+        {
+            columnDefinitions.Add("Id INTEGER PRIMARY KEY");
         }
         else
         {
-            await RebuildRootPhysicalTableAsync(newRootTableId, tableMap);
+            columnDefinitions.Add("Id INTEGER PRIMARY KEY AUTOINCREMENT");
         }
 
-        if (oldRootTableId.HasValue && oldRootTableId.Value != newRootTableId)
+        foreach (var column in table.Columns.OrderBy(c => c.Id))
         {
-            await MoveSubtreeRowsToNewRootAsync(tableId, oldRootTableId.Value, newRootTableId);
-            await RebuildRootPhysicalTableAsync(oldRootTableId.Value, tableMap);
-            await RebuildRootPhysicalTableAsync(newRootTableId, tableMap);
+            columnDefinitions.Add(BuildColumnDefinition(column));
         }
 
-        return true;
+        columnDefinitions.Add("CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        columnDefinitions.Add("UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+
+        if (table.InheritProperties && table.ParentTableId.HasValue)
+        {
+            var parentPhysicalName = GetPhysicalTableName(table.ParentTableId.Value);
+            columnDefinitions.Add($"FOREIGN KEY(Id) REFERENCES [{parentPhysicalName}](Id) ON DELETE CASCADE");
+        }
+
+        return $@"
+            CREATE TABLE [{GetPhysicalTableName(table.Id)}] (
+                {string.Join(",\n                ", columnDefinitions)}
+            )";
     }
 
     private async Task RebuildRootPhysicalTableAsync(int rootTableId, Dictionary<int, Table> tableMap)
@@ -159,8 +169,8 @@ public class DynamicTableService
         if (!rootTable.PhysicalTableCreated)
             return;
 
-        var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap);
-        await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
+        var ownColumns = rootTable.Columns.OrderBy(c => c.Id).ToList();
+        await RebuildPhysicalTableAsync(rootTableId, ownColumns, isDerived: false);
     }
 
     private async Task MoveSubtreeRowsToNewRootAsync(int movedTableId, int oldRootTableId, int newRootTableId)
@@ -225,42 +235,31 @@ public class DynamicTableService
             WHERE LogicalTableId IN ({subtreeIdList})");
     }
 
-    /// Adds a column to an existing hierarchy physical table.
+    /// Adds a column to an existing physical table.
     public async Task<bool> AddColumnAsync(Column column)
     {
-        try
-        {
-            var tableMap = await _context.Tables
-                .Include(t => t.Columns)
-                .ToDictionaryAsync(t => t.Id);
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
 
-            if (!tableMap.TryGetValue(column.TableId, out var table))
-                throw new InvalidOperationException($"Table with ID {column.TableId} not found");
+        if (!tableMap.TryGetValue(column.TableId, out var table))
+            throw new InvalidOperationException($"Table with ID {column.TableId} not found");
 
-            var rootTableId = GetRootTableId(table, tableMap);
-            var rootTable = tableMap[rootTableId];
-
-            if (!rootTable.PhysicalTableCreated)
-                return true;
-
-            var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap);
-            await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
-
-            rootTable.UpdatedAt = DateTime.UtcNow;
-            _context.Tables.Update(rootTable);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation($"Column '{column.Name}' added to physical hierarchy table '{GetPhysicalTableName(rootTableId)}'");
+        if (!table.PhysicalTableCreated)
             return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"Failed to add column {column.Name} to table ID {column.TableId}");
-            throw;
-        }
+
+        var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+        await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue);
+
+        table.UpdatedAt = DateTime.UtcNow;
+        _context.Tables.Update(table);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation($"Column '{column.Name}' added to physical table '{GetPhysicalTableName(table.Id)}'");
+        return true;
     }
 
-    /// Adds a column to the owning table and every inheriting child physical table.
+    /// Ensures the owning table physical table is created and then rebuilds its schema.
     public async Task<bool> AddColumnToTableAndDescendantsAsync(Column column)
     {
         var tableMap = await _context.Tables
@@ -270,32 +269,21 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(column.TableId, out var table))
             throw new InvalidOperationException($"Table with ID {column.TableId} not found");
 
-        var rootTableId = GetRootTableId(table, tableMap);
-        var rootTable = tableMap[rootTableId];
-        var hierarchyTables = GetHierarchyTables(rootTableId, tableMap);
-        var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap);
-
-        if (!rootTable.PhysicalTableCreated && effectiveColumns.Any())
+        if (!table.PhysicalTableCreated)
         {
             await CreatePhysicalTableAsync(column.TableId);
-            return true;
         }
 
-        if (rootTable.PhysicalTableCreated)
+        if (table.PhysicalTableCreated)
         {
-            await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
-            foreach (var hierarchyTable in hierarchyTables)
-            {
-                hierarchyTable.UpdatedAt = DateTime.UtcNow;
-                _context.Tables.Update(hierarchyTable);
-            }
-            await _context.SaveChangesAsync();
+            var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+            await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
         }
 
         return true;
     }
 
-    /// Rebuilds the owning table and every inheriting child physical table after a column edit.
+    /// Rebuilds the physical table after a column edit.
     public async Task<bool> UpdateColumnInTableAndDescendantsAsync(Column updatedColumn, string oldName)
     {
         var tableMap = await _context.Tables
@@ -305,16 +293,13 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(updatedColumn.TableId, out var table))
             throw new InvalidOperationException($"Table with ID {updatedColumn.TableId} not found");
 
-        var rootTableId = GetRootTableId(table, tableMap);
-        var rootTable = tableMap[rootTableId];
-
-        if (!rootTable.PhysicalTableCreated)
+        if (!table.PhysicalTableCreated)
             return true;
 
-        var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap, replacementColumn: updatedColumn, excludedColumnId: null);
-        await RebuildPhysicalTableAsync(rootTableId, effectiveColumns, oldName, updatedColumn.Name);
+        var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+        await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId, oldName, updatedColumn.Name);
 
-        foreach (var hierarchyTable in GetHierarchyTables(rootTableId, tableMap))
+        foreach (var hierarchyTable in GetHierarchyTables(table.Id, tableMap))
         {
             hierarchyTable.UpdatedAt = DateTime.UtcNow;
             _context.Tables.Update(hierarchyTable);
@@ -324,7 +309,7 @@ public class DynamicTableService
         return true;
     }
 
-    /// Drops a column from the owning table and every inheriting child physical table.
+    /// Drops a column from the owning table physical table.
     public async Task<bool> DropColumnFromTableAndDescendantsAsync(Column column)
     {
         var tableMap = await _context.Tables
@@ -334,61 +319,44 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(column.TableId, out var table))
             throw new InvalidOperationException($"Table with ID {column.TableId} not found");
 
-        var rootTableId = GetRootTableId(table, tableMap);
-        var rootTable = tableMap[rootTableId];
-
-        if (!rootTable.PhysicalTableCreated)
+        if (!table.PhysicalTableCreated)
             return true;
 
-        var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap, excludedColumnId: column.Id);
-        await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
+        var ownColumns = table.Columns
+            .Where(c => c.Id != column.Id)
+            .OrderBy(c => c.Id)
+            .ToList();
 
-        foreach (var hierarchyTable in GetHierarchyTables(rootTableId, tableMap))
-        {
-            hierarchyTable.UpdatedAt = DateTime.UtcNow;
-            _context.Tables.Update(hierarchyTable);
-        }
-
-        await _context.SaveChangesAsync();
+        await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
         return true;
     }
 
     /// Drops a column from an existing physical table
     public async Task<bool> DropColumnAsync(int tableId, string columnName)
     {
-        try
-        {
-            var tableMap = await _context.Tables
-                .Include(t => t.Columns)
-                .ToDictionaryAsync(t => t.Id);
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
 
-            if (!tableMap.TryGetValue(tableId, out var table))
-                throw new InvalidOperationException($"Table with ID {tableId} not found");
+        if (!tableMap.TryGetValue(tableId, out var table))
+            throw new InvalidOperationException($"Table with ID {tableId} not found");
 
-            var rootTableId = GetRootTableId(table, tableMap);
-            var rootTable = tableMap[rootTableId];
-
-            if (!rootTable.PhysicalTableCreated)
-                return true;
-
-            var effectiveColumns = GetHierarchyColumns(rootTableId, tableMap)
-                .Where(c => !string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            await RebuildPhysicalTableAsync(rootTableId, effectiveColumns);
-
-            rootTable.UpdatedAt = DateTime.UtcNow;
-            _context.Tables.Update(rootTable);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation($"Column '{columnName}' fully removed from physical table '{GetPhysicalTableName(rootTableId)}'");
+        if (!table.PhysicalTableCreated)
             return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"Failed to drop column {columnName} from table ID {tableId}");
-            throw;
-        }
+
+        var ownColumns = table.Columns
+            .Where(c => !string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(c => c.Id)
+            .ToList();
+
+        await RebuildPhysicalTableAsync(tableId, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
+
+        table.UpdatedAt = DateTime.UtcNow;
+        _context.Tables.Update(table);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation($"Column '{columnName}' fully removed from physical table '{GetPhysicalTableName(tableId)}'");
+        return true;
     }
 
     public string GetPhysicalTableName(int tableId)
@@ -405,8 +373,7 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(tableId, out var table))
             throw new InvalidOperationException($"Table with ID {tableId} not found");
 
-        var rootTableId = GetRootTableId(table, tableMap);
-        return GetPhysicalTableName(rootTableId);
+        return GetPhysicalTableName(tableId);
     }
 
     public async Task<bool> IsPhysicalTableCreatedAsync(int tableId)
@@ -418,8 +385,19 @@ public class DynamicTableService
         if (!tableMap.TryGetValue(tableId, out var table))
             return false;
 
-        var rootTableId = GetRootTableId(table, tableMap);
-        return tableMap[rootTableId].PhysicalTableCreated;
+        return GetTablePath(table, tableMap).All(t => t.PhysicalTableCreated) && table.PhysicalTableCreated;
+    }
+
+    public async Task<IReadOnlyList<Table>> GetTablePathAsync(int tableId)
+    {
+        var tableMap = await _context.Tables
+            .Include(t => t.Columns)
+            .ToDictionaryAsync(t => t.Id);
+
+        if (!tableMap.TryGetValue(tableId, out var table))
+            throw new InvalidOperationException($"Table with ID {tableId} not found");
+
+        return GetTablePath(table, tableMap);
     }
 
     public async Task<List<Column>> GetEffectiveColumnsAsync(int tableId)
@@ -544,26 +522,33 @@ public class DynamicTableService
     }
 
     private async Task RebuildPhysicalTableAsync(
-        int rootTableId,
-        IEnumerable<Column> effectiveColumns,
+        int tableId,
+        IEnumerable<Column> ownColumns,
+        bool isDerived,
+        int? parentTableId = null,
         string? oldColumnName = null,
         string? newColumnName = null)
     {
-        var physicalTableName = GetPhysicalTableName(rootTableId);
+        var physicalTableName = GetPhysicalTableName(tableId);
         var tempTableName = $"{physicalTableName}_temp_{Guid.NewGuid():N}";
-        var columns = effectiveColumns.ToList();
+        var columns = ownColumns.ToList();
         var columnDefinitions = BuildColumnDefinitions(columns);
         var allColumnDefinitions = new List<string>
         {
-            "Id INTEGER PRIMARY KEY AUTOINCREMENT",
-            "LogicalTableId INTEGER NOT NULL"
+            isDerived ? "Id INTEGER PRIMARY KEY" : "Id INTEGER PRIMARY KEY AUTOINCREMENT"
         };
 
         allColumnDefinitions.AddRange(columnDefinitions);
         allColumnDefinitions.Add("CreatedAt DATETIME NOT NULL");
         allColumnDefinitions.Add("UpdatedAt DATETIME NOT NULL");
 
-        var insertColumns = new List<string> { "Id", "LogicalTableId" };
+        if (isDerived && parentTableId.HasValue)
+        {
+            var parentPhysicalName = GetPhysicalTableName(parentTableId.Value);
+            allColumnDefinitions.Add($"FOREIGN KEY(Id) REFERENCES [{parentPhysicalName}](Id) ON DELETE CASCADE");
+        }
+
+        var insertColumns = new List<string> { "Id" };
         insertColumns.AddRange(columns.Select(c => c.Name));
         insertColumns.Add("CreatedAt");
         insertColumns.Add("UpdatedAt");
@@ -571,8 +556,7 @@ public class DynamicTableService
         var existingColumnNames = await GetPhysicalColumnNamesAsync(physicalTableName);
         var selectColumns = new List<string>
         {
-            existingColumnNames.Contains("Id") ? "[Id]" : "NULL",
-            existingColumnNames.Contains("LogicalTableId") ? "[LogicalTableId]" : rootTableId.ToString()
+            existingColumnNames.Contains("Id") ? "[Id]" : "NULL"
         };
 
         selectColumns.AddRange(columns.Select(column =>
@@ -598,6 +582,8 @@ public class DynamicTableService
         if (ownsTransaction)
             currentTransaction = await _context.Database.BeginTransactionAsync();
 
+        await _context.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF");
+
         await _context.Database.ExecuteSqlRawAsync($@"
             CREATE TABLE [{tempTableName}] (
                 {string.Join(",\n                ", allColumnDefinitions)}
@@ -611,6 +597,8 @@ public class DynamicTableService
 
         await _context.Database.ExecuteSqlRawAsync($"DROP TABLE [{physicalTableName}]");
         await _context.Database.ExecuteSqlRawAsync($"ALTER TABLE [{tempTableName}] RENAME TO [{physicalTableName}]");
+
+        await _context.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON");
 
         if (ownsTransaction && currentTransaction != null)
             await currentTransaction.CommitAsync();
