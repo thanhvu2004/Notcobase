@@ -3,8 +3,17 @@
     return columns.reduce((values, column) => {
       if (column.fieldType === "checkbox") {
         values[column.name] = false;
-      } else if (column.fieldType === "list") {
-        values[column.name] = [""];
+      } else if (column.fieldType === "select") {
+        let defaultValue = "";
+        try {
+          const props = typeof column.componentPropsJson === "string" 
+            ? JSON.parse(column.componentPropsJson) 
+            : column.componentPropsJson;
+          defaultValue = props?.defaultValue ?? "";
+        } catch (e) {
+          // ignore parse errors
+        }
+        values[column.name] = defaultValue;
       } else {
         values[column.name] = "";
       }
@@ -42,8 +51,8 @@
       return Boolean(value);
     }
 
-    if (fieldType === "list") {
-      return cleanListItems(value);
+    if (fieldType === "select") {
+      return String(value ?? "");
     }
 
     return value;
@@ -54,16 +63,14 @@
       return value === "1" ? "Yes" : "No";
     }
 
-    if (fieldType === "list") {
-      const items = cleanListItems(value);
-      return items.length > 0 ? items.join(", ") : "";
+    if (fieldType === "select") {
+      return String(value ?? "");
     }
 
     return String(value ?? "");
   }
 
   app.emptyRecord = emptyRecord;
-  app.cleanListItems = cleanListItems;
   app.coerceRecordValue = coerceRecordValue;
   app.formatRecordValue = formatRecordValue;
 })(window.Notcobase);

@@ -51,6 +51,7 @@ public class ColumnsController : ControllerBase
                 IsRequired = c.IsRequired,
                 TableId = c.TableId,
                 IsInherited = c.TableId != tableId,
+                ComponentPropsJson = c.ComponentPropsJson,
                 CreatedAt = c.CreatedAt
             })
             .ToList();
@@ -172,7 +173,7 @@ public class ColumnsController : ControllerBase
 
             if (GetEffectiveColumns(table, tableMap)
                 .Any(c => c.Id != columnId &&
-                          string.Equals(c.Name, newName, StringComparison.OrdinalIgnoreCase)))
+                        string.Equals(c.Name, newName, StringComparison.OrdinalIgnoreCase)))
             {
                 return BadRequest("A column with this name already exists on this table or an inherited parent table");
             }
@@ -185,6 +186,9 @@ public class ColumnsController : ControllerBase
 
         if (dto.IsRequired.HasValue)
             column.IsRequired = dto.IsRequired.Value;
+
+        if (dto.ComponentPropsJson is not null)
+            column.ComponentPropsJson = dto.ComponentPropsJson;
 
         try
         {
@@ -275,6 +279,7 @@ public class ColumnResponseDto
     public bool IsRequired { get; set; }
     public int TableId { get; set; }
     public bool IsInherited { get; set; }
+    public string ComponentPropsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
 }
 
@@ -290,4 +295,5 @@ public class UpdateColumnDto
     public string? Name { get; set; }
     public string? FieldType { get; set; }
     public bool? IsRequired { get; set; }
+    public string? ComponentPropsJson { get; set; }
 }

@@ -7,38 +7,29 @@ function useCellEditor() {
 
   const openCellEditor = (event, record, column) => {
     const currentValue = record.data?.[column.name];
+    let componentPropsJson = {};
+    try {
+      componentPropsJson = typeof column.componentPropsJson === "string" 
+        ? JSON.parse(column.componentPropsJson) 
+        : (column.componentPropsJson || {});
+    } catch (e) {
+      // ignore parse errors
+    }
+    
+    const defaultVal = componentPropsJson?.defaultValue ?? "";
     setCellEditor({
       recordId: record.id,
       columnName: column.name,
       fieldType: column.fieldType,
       isRequired: column.isRequired,
-      value: column.fieldType === "list" ? [...cleanListItems(currentValue)] : (currentValue ?? ""),
-      newItem: "",
+      value: column.fieldType === "select" ? (currentValue ?? defaultVal) : (currentValue ?? ""),
+      componentPropsJson: componentPropsJson,
       position: EditorUtils.getEditorPosition(event.currentTarget),
     });
   };
 
   const updateCellEditorValue = (value) => {
     setCellEditor((editor) => (editor ? { ...editor, value } : editor));
-  };
-
-  const updateCellEditorListItem = (itemIndex, value) => {
-    setCellEditor((editor) => {
-      if (!editor || !Array.isArray(editor.value)) return editor;
-
-      const items = [...editor.value];
-      items[itemIndex] = value;
-      return { ...editor, value: items };
-    });
-  };
-
-  const removeCellEditorListItem = (itemIndex) => {
-    setCellEditor((editor) => {
-      if (!editor || !Array.isArray(editor.value)) return editor;
-
-      const items = editor.value.filter((_, index) => index !== itemIndex);
-      return { ...editor, value: items };
-    });
   };
 
   const closeCellEditor = () => {
@@ -50,8 +41,6 @@ function useCellEditor() {
     setCellEditor,
     openCellEditor,
     updateCellEditorValue,
-    updateCellEditorListItem,
-    removeCellEditorListItem,
     closeCellEditor,
   };
 }

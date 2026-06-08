@@ -31,43 +31,30 @@ function CreateRecordModal({ isOpen, activeTable, columns, recordForm, onRecordF
                   }),
                   h("label", { className: "form-check-label" }, "Checked"),
                 )
-              : column.fieldType === "list"
-                ? h(
-                    "div",
-                    null,
-                    (Array.isArray(recordForm[column.name]) ? recordForm[column.name] : [""]).map((item, itemIndex) =>
-                      h(
-                        "div",
-                        { className: "input-group mb-2", key: itemIndex },
-                        h("input", {
-                          className: "form-control",
-                          required: column.isRequired && itemIndex === 0,
-                          value: item,
-                          placeholder: `Item ${itemIndex + 1}`,
-                          onChange: (event) => onListItemChange(column.name, itemIndex, event.target.value),
-                        }),
-                        h(
-                          "button",
-                          {
-                            type: "button",
-                            className: "btn btn-outline-danger",
-                            disabled: (recordForm[column.name] || [""]).length === 1,
-                            onClick: () => onRemoveListItem(column.name, itemIndex),
-                          },
-                          "Remove",
-                        ),
-                      ),
-                    ),
-                    h(
-                      "button",
+              : column.fieldType === "select"
+                ? (() => {
+                    let componentPropsJson = {};
+                    try {
+                      componentPropsJson = typeof column.componentPropsJson === "string" 
+                        ? JSON.parse(column.componentPropsJson) 
+                        : (column.componentPropsJson || {});
+                    } catch (e) {
+                      // ignore parse errors
+                    }
+                    return h(
+                      "select",
                       {
-                        type: "button",
-                        className: "btn btn-sm btn-outline-primary",
-                        onClick: () => onAddListItem(column.name),
+                        className: "form-control",
+                        required: column.isRequired,
+                        value: recordForm[column.name] ?? "",
+                        onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
                       },
-                      "Add item",
-                    ),
-                  )
+                      h("option", { value: "" }, "-- Select --"),
+                      (componentPropsJson.options || []).map((option) =>
+                        h("option", { key: option, value: option }, option)
+                      )
+                    );
+                  })()
                 : h("input", {
                     className: "form-control",
                     type: column.fieldType === "number" ? "number" : column.fieldType === "date" ? "date" : "text",

@@ -91,7 +91,9 @@ public class TablesController : ControllerBase
                 FieldType = c.FieldType,
                 IsRequired = c.IsRequired,
                 TableId = c.TableId,
-                IsInherited = c.TableId != table.Id
+                IsInherited = c.TableId != table.Id,
+                ComponentDefinitionId = c.ComponentDefinitionId,
+                ComponentPropsJson = c.ComponentPropsJson,
             }).ToList(),
             PhysicalTableCreated = GetRootPhysicalCreated(table, tableMap),
             CreatedAt = table.CreatedAt,
@@ -795,6 +797,8 @@ public class ColumnDto
     public bool IsRequired { get; set; }
     public int TableId { get; set; }
     public bool IsInherited { get; set; }
+    public int? ComponentDefinitionId { get; set; }
+    public string ComponentPropsJson { get; set; } = "{}";
 }
 
 public class ImportDatabaseResultDto

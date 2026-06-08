@@ -140,6 +140,8 @@
 
   function buildFormFieldsFromColumns(columns) {
     return (columns || []).map((column) => ({
+      componentPropsJson: column.componentPropsJson,
+      componentDefinitionId: column.componentDefinitionId,
       name: column.name,
       label: column.name,
       fieldType: column.fieldType,
@@ -158,8 +160,8 @@
       case "boolean":
       case "checkbox":
         return { schemaType: "boolean", component: "Switch" };
-      case "list":
-        return { schemaType: "string", component: "Input.TextArea" };
+      case "select":
+        return { schemaType: "string", component: "Select" };
       default:
         return { schemaType: "string", component: "Input" };
     }

@@ -2,7 +2,7 @@
 const h = React.createElement;
 const { Modal, FIELD_TYPES } = app;
 
-function EditFieldModal({ isOpen, editingColumn, editFieldForm, onFormChange, onSubmit, onClose, saving }) {
+function EditFieldModal({ isOpen, editingColumn, editFieldForm, onFormChange, onSubmit, onClose, saving, onConfigureOptions }) {
   if (!isOpen || !editingColumn) return null;
 
   return h(
@@ -43,6 +43,19 @@ function EditFieldModal({ isOpen, editingColumn, editFieldForm, onFormChange, on
             onChange: (event) => onFormChange({ ...editFieldForm, isRequired: event.target.checked }),
           }),
           h("label", { className: "form-check-label", htmlFor: "editFieldRequired" }, "Required"),
+        ),
+        editFieldForm.fieldType === "select" && h(
+          "div",
+          { className: "mt-2" },
+          h(
+            "button",
+            {
+              type: "button",
+              className: "btn btn-sm btn-outline-secondary",
+              onClick: () => onConfigureOptions && onConfigureOptions(),
+            },
+            "Configure options"
+          )
         ),
       ),
       h(

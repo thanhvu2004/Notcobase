@@ -11,7 +11,7 @@
     onSave,
     onCancel,
   }) {
-    const inputType = editor.fieldType === "number" ? "number" : editor.fieldType === "date" ? "date" : "text";
+    const inputType = editor.fieldType === "number" ? "number" : editor.fieldType === "date" ? "date" : editor.fieldType === "select" ? "select" : "text";
 
     return h(
       "div",
@@ -31,7 +31,7 @@
       h(
         "div",
         { className: "small fw-semibold mb-2" },
-        editor.fieldType === "list" ? "Edit list items" : "Edit value",
+        editor.fieldType === "select" ? "Select value" : "Edit value",
       ),
       editor.fieldType === "checkbox"
         ? h(
@@ -50,37 +50,22 @@
               "Checked",
             ),
           )
-        : editor.fieldType === "list"
+        : editor.fieldType === "select"
           ? h(
               "div",
               null,
-              (Array.isArray(editor.value) && editor.value.length > 0 ? editor.value : [""]).map((item, itemIndex) =>
-                h(
-                  "div",
-                  { className: "input-group input-group-sm mb-2", key: itemIndex },
-                  h("input", {
-                    className: "form-control",
-                    value: item,
-                    placeholder: `Item ${itemIndex + 1}`,
-                    onChange: (event) => onListItemChange(itemIndex, event.target.value),
-                  }),
-                  h(
-                    "button",
-                    {
-                      type: "button",
-                      className: "btn btn-outline-danger",
-                      onClick: () => onListItemRemove(itemIndex),
-                    },
-                    "Remove",
-                  ),
-                ),
-              ),
-              h("input", {
-                className: "form-control form-control-sm mb-3",
-                value: editor.newItem,
-                placeholder: "New item",
-                onChange: (event) => onNewItemChange(event.target.value),
-              }),
+              h(
+                "select",
+                {
+                  className: "form-control form-control-sm mb-3",
+                  value: editor.value ?? "",
+                  onChange: (event) => onValueChange(event.target.value),
+                },
+                h("option", { value: "" }, "-- Select --"),
+                (editor.componentPropsJson?.options || []).map((option) =>
+                  h("option", { key: option, value: option }, option)
+                )
+              )
             )
           : h("input", {
               className: "form-control form-control-sm mb-3",

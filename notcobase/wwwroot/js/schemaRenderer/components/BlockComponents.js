@@ -8,6 +8,7 @@
     Button,
     Card,
     Checkbox,
+    DatePicker,
     Empty,
     Form,
     Input,
@@ -18,7 +19,6 @@
     Space,
     Spin,
     Switch,
-    Table,
     Typography,
     message,
   } = antd;
@@ -44,11 +44,43 @@
       placeholder: field.label,
     };
 
+    const componentProps = field.componentPropsJson
+      ? typeof field.componentPropsJson === "string"
+        ? JSON.parse(field.componentPropsJson || "{}")
+        : field.componentPropsJson
+      : {};
+
     switch ((field.fieldType || "text").toLowerCase()) {
       case "number":
         return h(InputNumber, { ...common, style: { width: "100%" } });
       case "boolean":
         return h(Switch, null);
+      case "date":
+        return h(Input, { ...common, type: "date" });
+      case "select":
+        {
+          const options = Array.isArray(componentProps.options)
+            ? componentProps.options.map((option) => {
+                if (typeof option === "object") {
+                  return option;
+                }
+
+                return {
+                  label: String(option),
+                  value: option,
+                };
+              })
+            : [];
+
+          return h(Select, {
+            ...common,
+            options,
+            allowClear: true,
+            style: { width: "100%" },
+          });
+        }
+      case "checkbox":
+        return h(Checkbox, null);
       default:
         return h(Input, common);
     }
@@ -1043,7 +1075,7 @@
             }),
           ),
         ),
-        h(Table, {
+        h(antd.Table, {
           rowKey: "id",
           size: props.size || "small",
           loading,

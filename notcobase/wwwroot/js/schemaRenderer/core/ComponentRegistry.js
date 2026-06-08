@@ -18,7 +18,6 @@
     Select,
     Space,
     Switch,
-    Table,
     Tabs,
     Typography,
   } = antd;
@@ -66,8 +65,7 @@
     ["Select", Select, { category: "Fields", field: true }],
     ["Space", Space, { category: "Layout", container: true }],
     ["Switch", Switch, { category: "Fields", field: true }],
-    ["Table", Table, { category: "Data" }],
-    ["TableBlock", Table, { label: "Table Block", category: "Data", defaultProps: { title: "Records", tableId: null, allowCreate: true, allowEdit: true, allowDelete: true, pageSize: 10, columns: [] } }],
+    ["TableBlock", antd.Table, { label: "Table Block", category: "Data", defaultProps: { title: "Records", tableId: null, allowCreate: true, allowEdit: true, allowDelete: true, pageSize: 10, columns: [] } }],
     ["Tabs", Tabs, { category: "Layout", container: true }],
     ["Text", Typography.Text, { category: "Typography" }],
     ["Title", Typography.Title, { category: "Typography" }],

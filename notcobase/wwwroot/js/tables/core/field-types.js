@@ -1,3 +1,3 @@
 (function (app) {
-  app.FIELD_TYPES = ["text", "number", "date", "checkbox", "list"];
+  app.FIELD_TYPES = ["text", "number", "date", "checkbox", "select"];
 })(window.Notcobase);

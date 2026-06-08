@@ -21,6 +21,7 @@ const {
   ImportDatabaseModal,
   CreateRecordModal,
   EditFieldModal,
+  ComboboxOptionsModal,
 } = app;
 
 function can(permission) {
@@ -51,6 +52,8 @@ function TablesApp() {
   const [showImportDatabase, setShowImportDatabase] = useState(false);
   const [importDatabaseFile, setImportDatabaseFile] = useState(null);
   const [showCreateRecord, setShowCreateRecord] = useState(false);
+  const [showComboboxOptionsModal, setShowComboboxOptionsModal] = useState(false);
+  const [newComboboxColumn, setNewComboboxColumn] = useState(null);
 
 
   const selectedTableId = tableState.selectedTable?.id;
@@ -213,9 +216,14 @@ function TablesApp() {
 
     try {
       setSaving(true);
-      await ColumnOperations.createColumn(selectedTableId, columnState.fieldForm);
+      const newColumn = await ColumnOperations.createColumn(selectedTableId, columnState.fieldForm);
       columnState.resetFieldForm();
       await refreshSelectedTable();
+      
+      if (columnState.fieldForm.fieldType === "select") {
+        setNewComboboxColumn(newColumn);
+        setShowComboboxOptionsModal(true);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -234,9 +242,20 @@ function TablesApp() {
         fieldType: columnState.editFieldForm.fieldType,
         isRequired: columnState.editFieldForm.isRequired,
       };
-      await ColumnOperations.updateColumn(selectedTableId, columnState.editingColumn.id, data);
+      const editingId = columnState.editingColumn.id;
+      await ColumnOperations.updateColumn(selectedTableId, editingId, data);
       columnState.resetEditFieldForm();
       await refreshSelectedTable();
+
+      // If the updated field is a select, open the options modal so the user can manage options
+      if (data.fieldType === "select") {
+        const updated = columnState.columns.find((c) => c.id === editingId);
+        if (updated) {
+          setNewComboboxColumn(updated);
+          setShowComboboxOptionsModal(true);
+        }
+      }
+
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -253,6 +272,28 @@ function TablesApp() {
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const saveComboboxOptions = async (componentPropsJson) => {
+    if (!selectedTableId || !newComboboxColumn) return;
+
+    try {
+      setSaving(true);
+      const data = {
+        name: newComboboxColumn.name,
+        fieldType: newComboboxColumn.fieldType,
+        isRequired: newComboboxColumn.isRequired,
+        componentPropsJson: componentPropsJson,
+      };
+      await ColumnOperations.updateColumn(selectedTableId, newComboboxColumn.id, data);
+      setShowComboboxOptionsModal(false);
+      setNewComboboxColumn(null);
+      await refreshSelectedTable();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -313,15 +354,7 @@ function TablesApp() {
     if (!record) return;
 
     const data = { ...(record.data || {}) };
-    if (cellEditorState.cellEditor.fieldType === "list") {
-      const { cleanListItems } = window.Notcobase;
-      data[cellEditorState.cellEditor.columnName] = cleanListItems([
-        ...(Array.isArray(cellEditorState.cellEditor.value) ? cellEditorState.cellEditor.value : []),
-        cellEditorState.cellEditor.newItem,
-      ]);
-    } else {
-      data[cellEditorState.cellEditor.columnName] = coerceRecordValue(cellEditorState.cellEditor.value, cellEditorState.cellEditor.fieldType);
-    }
+    data[cellEditorState.cellEditor.columnName] = coerceRecordValue(cellEditorState.cellEditor.value, cellEditorState.cellEditor.fieldType);
 
     try {
       setSaving(true);
@@ -508,7 +541,25 @@ function TablesApp() {
         onFormChange: columnState.setEditFieldForm,
         onSubmit: updateColumn,
         onClose: columnState.resetEditFieldForm,
+        onConfigureOptions: () => {
+          setNewComboboxColumn(columnState.editingColumn);
+          setShowComboboxOptionsModal(true);
+          columnState.resetEditFieldForm();
+        },
         saving: saving,
+      }),
+    ),
+
+    withPermission(
+      "columns.create",
+      h(ComboboxOptionsModal, {
+        isOpen: showComboboxOptionsModal,
+        column: newComboboxColumn,
+        onSave: saveComboboxOptions,
+        onClose: () => {
+          setShowComboboxOptionsModal(false);
+          setNewComboboxColumn(null);
+        },
       }),
     ),
 

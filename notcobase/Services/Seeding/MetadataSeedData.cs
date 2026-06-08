@@ -24,17 +24,12 @@ public static class MetadataSeedData
         Component("Select", "Fields", "select-outlined", canHaveChildren: false,
             defaultProps: """{"placeholder":"Select value","allowClear":true}""",
             defaultSchema: """
-            {"type":"string","title":"Select","x-component":"Select","enum":[{"label":"Option A","value":"a"},{"label":"Option B","value":"b"}],"x-index":0}
+            {"type":"string","title":"Select","x-component":"Select","x-index":0}
             """),
         Component("Card", "Layout", "credit-card-outlined", canHaveChildren: true,
             defaultProps: """{"title":"Card","bordered":true}""",
             defaultSchema: """
             {"type":"void","title":"Card","x-component":"Card","x-component-props":{"title":"Card"},"properties":{},"x-index":0}
-            """),
-        Component("Table", "Data", "table-outlined", canHaveChildren: false,
-            defaultProps: """{"size":"middle","pagination":{"pageSize":10}}""",
-            defaultSchema: """
-            {"type":"array","title":"Table","x-component":"Table","x-component-props":{"columns":[{"title":"Name","dataIndex":"name"},{"title":"Status","dataIndex":"status"}],"dataSource":[]},"x-index":0}
             """),
         Component("Tabs", "Layout", "appstore-outlined", canHaveChildren: true,
             defaultProps: """{}""",

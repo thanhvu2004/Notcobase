@@ -12,4 +12,7 @@ public class Column
 
     // Navigation property
     public Table? Table { get; set; }
+    public int? ComponentDefinitionId { get; set; }
+    public ComponentDefinition? ComponentDefinition { get; set; }
+    public string ComponentPropsJson { get; set; } = "{}";
 }
