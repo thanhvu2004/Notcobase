@@ -66,19 +66,28 @@
   function buildRecordDataFromSchema(schema, values) {
     const payload = {};
 
-    SchemaUtils.sortSchemaEntries(schema?.properties).forEach(([key, childSchema]) => {
-      if (!isDataFieldNode(childSchema)) {
-        return;
-      }
+    function collectProperties(node) {
+      SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
+        const hasChildren = childSchema?.properties && Object.keys(childSchema.properties).length > 0;
 
-      const fieldName = getFieldName(key, childSchema);
-      const value = resolveFormValue(values, key, fieldName);
+        if (hasChildren) {
+          collectProperties(childSchema);
+        }
 
-      if (value !== undefined && value !== null) {
-        payload[fieldName] = value;
-      }
-    });
+        if (!isDataFieldNode(childSchema)) {
+          return;
+        }
 
+        const fieldName = getFieldName(key, childSchema);
+        const value = resolveFormValue(values, key, fieldName);
+
+        if (value !== undefined && value !== null) {
+          payload[fieldName] = value;
+        }
+      });
+    }
+
+    collectProperties(schema);
     return payload;
   }
 
@@ -115,14 +124,24 @@
     const data = record?.data || {};
     const values = {};
 
-    SchemaUtils.sortSchemaEntries(schema?.properties).forEach(([key, childSchema]) => {
-      const fieldName = getFieldName(key, childSchema);
-      const match = Object.entries(data).find(([columnName]) => columnName.toLowerCase() === fieldName.toLowerCase());
-      if (match) {
-        values[key] = match[1];
-      }
-    });
+    function mapProperties(node) {
+      SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
+        const hasChildren = childSchema?.properties && Object.keys(childSchema.properties).length > 0;
 
+        if (hasChildren) {
+          mapProperties(childSchema);
+        }
+
+        const fieldName = getFieldName(key, childSchema);
+        const match = Object.entries(data).find(([columnName]) => columnName.toLowerCase() === fieldName.toLowerCase());
+
+        if (match) {
+          values[key] = match[1];
+        }
+      });
+    }
+
+    mapProperties(schema);
     return values;
   }
 
@@ -200,6 +219,7 @@
   function createPropertySchemaFromColumn(column, index) {
     const mapping = fieldTypeToSchemaComponent(column.fieldType);
     const propertyKey = sanitizePropertyKey(column.name);
+    const componentProps = column.componentPropsJson ? (typeof column.componentPropsJson === "string" ? JSON.parse(column.componentPropsJson) : column.componentPropsJson) : {};
     const schema = {
       id: SchemaUtils.createNodeId(propertyKey),
       type: mapping.schemaType,
@@ -209,6 +229,7 @@
       "x-index": index,
       "x-component-props": {
         placeholder: column.name,
+        ...componentProps,
       },
       name: propertyKey,
     };

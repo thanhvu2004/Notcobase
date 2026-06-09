@@ -12,49 +12,17 @@
   } = window.Notcobase;
 
   const defaultSchema = SchemaUtils.ensureNodeIds({
-    type: "object",
-    name: "customerForm",
-    title: "Customer form",
-    "x-component": "Form",
+    "type": "object",
+    "name": "NewPage",
+    "title": "New Page",
+    "x-component": "Container",
     "x-component-props": {
-      layout: "vertical",
+      "layout": "vertical"
     },
-    required: ["name"],
-    properties: {
-      name: {
-        type: "string",
-        title: "Customer name",
-        "x-component": "Input",
-        "x-index": 0,
-      },
-      status: {
-        type: "string",
-        title: "Status",
-        "x-component": "Select",
-        enum: [
-          { label: "Lead", value: "lead" },
-          { label: "Active", value: "active" },
-        ],
-        "x-index": 1,
-      },
-      actions: {
-        type: "void",
-        "x-component": "Space",
-        "x-index": 2,
-        properties: {
-          submit: {
-            type: "void",
-            title: "Submit",
-            "x-component": "Button",
-            "x-component-props": {
-              type: "primary",
-              htmlType: "submit",
-            },
-            "x-index": 0,
-          },
-        },
-      },
-    },
+    "required": [
+      "name"
+    ],
+    "properties": {},
   });
 
   function parseSchemaJson(value) {
@@ -65,7 +33,7 @@
   function SchemaDesignerApp() {
     const [pages, setPages] = useState([]);
     const [activePageId, setActivePageId] = useState(null);
-    const [pageName, setPageName] = useState("Customer form");
+    const [pageName, setPageName] = useState("New page");
     const [schema, setSchema] = useState(defaultSchema);
     const [schemaText, setSchemaText] = useState(JSON.stringify(defaultSchema, null, 2));
     const [mode, setMode] = useState("runtime");
@@ -161,7 +129,7 @@
 
     function createNewPage() {
       setActivePageId(null);
-      setPageName("Customer form");
+      setPageName("New page");
       setSchema(defaultSchema);
       DesignerStore.getState().setSelectedNodeId(null);
     }
@@ -313,6 +281,7 @@
                 },
                 onMoveNode: moveNode,
                 onDeleteNode: deleteNode,
+                onAddComponent: addComponent,
                 onSubmit: (values) => {
                   setSubmittedValues(values);
                   message.success("Form submitted");

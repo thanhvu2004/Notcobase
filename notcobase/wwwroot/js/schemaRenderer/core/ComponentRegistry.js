@@ -2,16 +2,12 @@
   window.Notcobase = window.Notcobase || {};
 
   const {
-    //Alert,
     Button,
-    Card,
     Checkbox,
     Col,
     Collapse,
     DatePicker,
     Divider,
-    // Empty,
-    Form,
     Input,
     InputNumber,
     Radio,
@@ -45,18 +41,38 @@
     return Array.from(components.values());
   }
 
+  function getComponentItems() {
+    const grouped = new Map();
+
+    listComponents().forEach((component) => {
+      const category = component.category || "General";
+
+      if (!grouped.has(category)) {
+        grouped.set(category, []);
+      }
+
+      grouped.get(category).push({
+        key: component.name,
+        label: component.label || component.name,
+      });
+    });
+
+    return Array.from(grouped.entries()).map(([category, children]) => ({
+      key: `group-${category}`,
+      label: category,
+      type: "group",
+      children,
+    }));
+  }
+
   [
-    // ["Action", Button, { label: "Action", category: "Actions" }],
-    // ["Alert", Alert, { category: "Feedback" }],
+    ["Container", "div", { category: "Layout", container: true }],
     ["Button", Button, { category: "Actions" }],
-    ["Card", Card, { category: "Layout", container: true }],
     ["Checkbox", Checkbox, { category: "Fields", field: true }],
     ["DatePicker", DatePicker, { category: "Fields", field: true }],
-    ["DetailCard", Card, { label: "Detail Card", category: "Data", container: true, defaultProps: { title: "Record details", bordered: true, tableId: null, recordIdParam: "id", allowEdit: true, allowDelete: true } }],
+    ["DetailCard", antd.Card, { label: "Detail Card", category: "Data", container: true, defaultProps: { title: "Record details", bordered: true, tableId: null, recordIdParam: "id", allowEdit: true, allowDelete: true } }],
     ["Divider", Divider, { category: "Layout" }],
-    // ["Empty", Empty, { category: "Feedback" }],
-    ["Form", Form, { category: "Layout", container: true }],
-    ["FormBlock", Form, { label: "Form Block", category: "Data", container: true, defaultProps: { title: "Form block", layout: "vertical", tableId: null, recordIdParam: "id", mode: "auto", allowCreate: true, allowDelete: false, submitLabel: "Save", formColumns: [] } }],
+    ["FormBlock", antd.Form, { label: "Form Block", category: "Data", container: true, defaultProps: { title: "Form block", layout: "vertical", tableId: null, recordIdParam: "id", mode: "auto", allowCreate: true, allowDelete: false, submitLabel: "Save", formColumns: [] } }],
     ["Grid.Col", Col, { label: "Column", category: "Layout", container: true }],
     ["Grid.Row", Row, { label: "Row", category: "Layout", container: true, defaultProps: { gutter: 16 } }],
     ["Input", Input, { category: "Fields", field: true }],
@@ -77,6 +93,7 @@
   window.Notcobase.ComponentRegistry = {
     getComponent,
     listComponents,
+    getComponentItems,
     registerComponent,
   };
 })(window, antd);

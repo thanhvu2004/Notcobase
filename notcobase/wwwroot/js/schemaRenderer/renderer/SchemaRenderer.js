@@ -3,7 +3,7 @@
 
   const h = React.createElement;
   const { useMemo } = React;
-  const { Alert, Empty, Form, Tabs, Typography, Collapse } = antd;
+  const { Alert, Empty, Form, Tabs, Typography, Collapse, Dropdown, Button } = antd;
   const {
     ComponentRegistry,
     DecoratorRegistry,
@@ -277,6 +277,10 @@
       SchemaUtils.isContainerNode(schema) ? "is-container" : "",
     ].filter(Boolean).join(" ");
 
+    const componentName = SchemaUtils.inferComponent(schema);
+    const isContainer = SchemaUtils.isContainerNode(schema) || componentName === "Container";
+    const componentItems = ComponentRegistry.getComponentItems();
+
     function handleSelect(event) {
       event.stopPropagation();
       DesignerStore.getState().setSelectedNodeId(schema.id);
@@ -311,6 +315,11 @@
         placement: SchemaUtils.isContainerNode(schema) ? "inside" : "after",
       });
       DesignerStore.getState().setDraggingNodeId(null);
+    }
+
+    function handleAddComponent(key, { domEvent }) {
+      domEvent.stopPropagation();
+      context.onAddComponent?.(key, schema.id);
     }
 
     return h(
@@ -351,6 +360,33 @@
           ),
       ),
       children,
+      (mode => mode)(isContainer) &&
+        h(
+          "div",
+          {
+            className: "schema-designer-inline-add",
+            onClick: (event) => event.stopPropagation(),
+          },
+          h(
+            Dropdown,
+            {
+              menu: {
+                items: componentItems,
+                onClick: ({ key, domEvent }) => handleAddComponent(key, { domEvent }),
+              },
+              trigger: ["click"],
+            },
+            h(
+              Button,
+              {
+                block: true,
+                type: "dashed",
+                className: "schema-designer-inline-add-button",
+              },
+              "+ Add Component"
+            )
+          )
+        ),
     );
   }
 
@@ -368,7 +404,7 @@
     return h(DesignerNodeFrame, { key: schema.id, schema, context }, node);
   }
 
-  function SchemaRenderer({ schema, initialValues, mode, runtimeContext, onNodeSelect, onMoveNode, onDeleteNode, onRecordSaved, onRecordDeleted, onSubmit, onValuesChange, formProps }) {
+  function SchemaRenderer({ schema, initialValues, mode, runtimeContext, onNodeSelect, onMoveNode, onDeleteNode, onAddComponent, onRecordSaved, onRecordDeleted, onSubmit, onValuesChange, formProps }) {
     const [form] = Form.useForm();
     const normalizedSchema = useMemo(() => SchemaUtils.ensureNodeIds(schema || {}), [schema]);
 
@@ -410,6 +446,7 @@
         runtimeContext,
         onMoveNode,
         onDeleteNode,
+        onAddComponent,
         onRecordSaved,
         onRecordDeleted,
         isRoot: true,
