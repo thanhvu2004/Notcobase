@@ -7,6 +7,7 @@
     Card,
     Checkbox,
     Col,
+    Collapse,
     DatePicker,
     Divider,
     // Empty,
@@ -69,6 +70,8 @@
     ["Tabs", Tabs, { category: "Layout", container: true }],
     ["Text", Typography.Text, { category: "Typography" }],
     ["Title", Typography.Title, { category: "Typography" }],
+    ['Section', Collapse, { label: 'Accordion Section', category: 'Layout', container: true, defaultProps: { title: 'Section', accordion: true, collapsible: true, defaultCollapsed: false, bordered: false }
+    }]
   ].forEach(([name, component, options]) => registerComponent(name, component, options));
 
   window.Notcobase.ComponentRegistry = {

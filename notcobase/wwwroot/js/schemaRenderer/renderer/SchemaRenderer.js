@@ -3,7 +3,7 @@
 
   const h = React.createElement;
   const { useMemo } = React;
-  const { Alert, Empty, Form, Tabs, Typography } = antd;
+  const { Alert, Empty, Form, Tabs, Typography, Collapse } = antd;
   const {
     ComponentRegistry,
     DecoratorRegistry,
@@ -139,6 +139,29 @@
 
     if (componentName === "Tabs") {
       return renderTabs(schema, props, context);
+    }
+
+    if (componentName === "Section") {
+      const panelContent = childNodes.length
+        ? h("div", { className: "schema-renderer-section-content" }, childNodes)
+        : h(Empty, {
+            description: "Drop components here",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          });
+
+      return h(Collapse, {
+        ...props,
+        items: [
+          {
+            key: schema.id || context.name || "section",
+            label: props.title || schema.title || "Section",
+            children: panelContent,
+          },
+        ],
+        defaultActiveKey: props.defaultCollapsed
+          ? []
+          : [schema.id || context.name || "section"],
+      });
     }
 
     if (componentName === "Table") {

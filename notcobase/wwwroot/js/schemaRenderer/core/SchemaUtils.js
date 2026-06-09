@@ -76,7 +76,7 @@
   }
 
   function isContainerNode(schema) {
-    return ["Card", "Form", "FormBlock", "DetailCard", "Grid.Col", "Grid.Row", "Space", "Tabs"].includes(inferComponent(schema));
+    return ["Card", "Form", "FormBlock", "DetailCard", "Grid.Col", "Grid.Row", "Space", "Tabs", "Section"].includes(inferComponent(schema));
   }
 
   function isBlockComponent(componentName) {
@@ -338,6 +338,44 @@
           allowDelete: true,
           pageSize: 10,
           columns: [],
+        },
+      };
+    }
+
+    if (componentName === "Grid.Row") {
+      return {
+        id: createNodeId(key),
+        type: "void",
+        title: "Grid.Row",
+        "x-component": "Grid.Row",
+        "x-component-props": {
+          gutter: 16,
+          columns: 1,
+        },
+        name: key,
+        properties: {
+          col1: {
+            id: createNodeId("col1"),
+            type: "void",
+            title: "Column 1",
+            "x-component": "Grid.Col",
+            "x-component-props": {
+              span: 12,
+            },
+            properties: {},
+            "x-index": 0,
+          },
+          col2: {
+            id: createNodeId("col2"),
+            type: "void",
+            title: "Column 2",
+            "x-component": "Grid.Col",
+            "x-component-props": {
+              span: 12,
+            },
+            properties: {},
+            "x-index": 1,
+          },
         },
       };
     }

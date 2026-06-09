@@ -301,6 +301,7 @@
     const componentName = SchemaUtils.inferComponent(node);
     const isBlock = SchemaUtils.isBlockComponent(componentName);
     const isFormBlock = componentName === "FormBlock";
+    const isGridRow = componentName === "Grid.Row";
     const isRequired = Boolean(selectedMatch.parent && Array.isArray(selectedMatch.parent.required) && selectedMatch.parent.required.includes(selectedMatch.key));
     const componentOptions = ComponentRegistry.listComponents().map((item) => ({
       label: item.label,
@@ -354,7 +355,7 @@
 
     const insertComponents = isFormBlock
       ? ["Button"]
-      : ["Input", "Select", "Card", "DetailCard", "FormBlock", "TableBlock", "Grid.Row", "Grid.Col", "Space", "Tabs", "Button"];
+      : ["Input", "Select", "DetailCard", "FormBlock", "TableBlock", "Grid.Row", "Grid.Col", "Space", "Divider", "Tabs", "Section", "Button"];
 
     return h(
       Card,
@@ -442,6 +443,57 @@
               disabled: !selectedMatch.parent,
               onChange: (event) => onSchemaChange(SchemaUtils.setRequired(schema, selectedNodeId, event.target.checked)),
             }, "Required field"),
+          ),
+        isGridRow &&
+          h(
+            Form.Item,
+            { label: "Columns" },
+            h(InputNumber, {
+              min: 1,
+              max: 12,
+              style: { width: "100%" },
+              value: node["x-component-props"]?.columns || Object.keys(node.properties || {}).length || 2,
+              onChange: (value) => {
+                const columnCount = Math.max(1, Math.min(12, Number(value || 1)));
+
+                updateSelectedNode((draft) => {
+                  draft.properties = draft.properties || {};
+                  draft["x-component-props"] = draft["x-component-props"] || {};
+                  draft["x-component-props"].columns = columnCount;
+
+                  const currentKeys = Object.keys(draft.properties);
+
+                  if (currentKeys.length < columnCount) {
+                    for (let i = currentKeys.length; i < columnCount; i += 1) {
+                      draft.properties[`col${i + 1}`] = {
+                        id: SchemaUtils.createNodeId(`col${i + 1}`),
+                        type: "void",
+                        title: `Column ${i + 1}`,
+                        "x-component": "Grid.Col",
+                        "x-component-props": {
+                          span: Math.floor(24 / columnCount),
+                        },
+                        properties: {},
+                        "x-index": i,
+                      };
+                    }
+                  } else if (currentKeys.length > columnCount) {
+                    currentKeys
+                      .sort((a, b) => (draft.properties[a]["x-index"] ?? 0) - (draft.properties[b]["x-index"] ?? 0))
+                      .slice(columnCount)
+                      .forEach((key) => delete draft.properties[key]);
+                  }
+
+                  const span = Math.floor(24 / columnCount);
+                  Object.values(draft.properties).forEach((col) => {
+                    col["x-component-props"] = col["x-component-props"] || {};
+                    col["x-component-props"].span = span;
+                  });
+
+                  return draft;
+                });
+              },
+            })
           ),
         h(BlockConfigFields, {
           node,
