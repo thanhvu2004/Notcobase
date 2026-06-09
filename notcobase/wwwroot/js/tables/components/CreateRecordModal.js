@@ -55,9 +55,23 @@ function CreateRecordModal({ isOpen, activeTable, columns, recordForm, onRecordF
                       )
                     );
                   })()
+            : column.fieldType === "longtext"
+              ? h("textarea", {
+                  className: "form-control",
+                  rows: 4,
+                  required: column.isRequired,
+                  value: recordForm[column.name] ?? "",
+                  onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
+                })
                 : h("input", {
                     className: "form-control",
-                    type: column.fieldType === "number" ? "number" : column.fieldType === "date" ? "date" : "text",
+                    type: 
+                      column.fieldType === "number" ? "number" : 
+                      column.fieldType === "date" ? "date" : 
+                      column.fieldType === "url" ? "url" : 
+                      column.fieldType === "finance" ? "number" : 
+                      column.fieldType === "file" ? "file" :
+                      "text",
                     required: column.isRequired,
                     value: recordForm[column.name] ?? "",
                     onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),

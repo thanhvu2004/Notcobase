@@ -2,14 +2,14 @@
   window.Notcobase = window.Notcobase || {};
 
   const {
-    Alert,
+    //Alert,
     Button,
     Card,
     Checkbox,
     Col,
     DatePicker,
     Divider,
-    Empty,
+    // Empty,
     Form,
     Input,
     InputNumber,
@@ -45,15 +45,15 @@
   }
 
   [
-    ["Action", Button, { label: "Action", category: "Actions" }],
-    ["Alert", Alert, { category: "Feedback" }],
+    // ["Action", Button, { label: "Action", category: "Actions" }],
+    // ["Alert", Alert, { category: "Feedback" }],
     ["Button", Button, { category: "Actions" }],
     ["Card", Card, { category: "Layout", container: true }],
     ["Checkbox", Checkbox, { category: "Fields", field: true }],
     ["DatePicker", DatePicker, { category: "Fields", field: true }],
     ["DetailCard", Card, { label: "Detail Card", category: "Data", container: true, defaultProps: { title: "Record details", bordered: true, tableId: null, recordIdParam: "id", allowEdit: true, allowDelete: true } }],
     ["Divider", Divider, { category: "Layout" }],
-    ["Empty", Empty, { category: "Feedback" }],
+    // ["Empty", Empty, { category: "Feedback" }],
     ["Form", Form, { category: "Layout", container: true }],
     ["FormBlock", Form, { label: "Form Block", category: "Data", container: true, defaultProps: { title: "Form block", layout: "vertical", tableId: null, recordIdParam: "id", mode: "auto", allowCreate: true, allowDelete: false, submitLabel: "Save", formColumns: [] } }],
     ["Grid.Col", Col, { label: "Column", category: "Layout", container: true }],
