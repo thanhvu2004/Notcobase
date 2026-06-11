@@ -246,6 +246,10 @@ body {
   vertical-align: middle;
 }
 
+.ant-table-content {
+  overflow: scroll;
+}
+
 .schema-demo-shell {
   padding: 1.5rem 0 2.5rem;
 }
@@ -290,6 +294,7 @@ body {
 
 .schema-designer-shell {
   padding: 1rem 0 2.5rem;
+  width: 100%;
 }
 
 .schema-designer-toolbar {
@@ -315,7 +320,7 @@ body {
 .schema-designer-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(280px, 0.7fr) minmax(420px, 1.15fr) minmax(280px, 0.75fr);
+  grid-template-columns: 2fr 1fr;
 }
 
 .schema-designer-editor {
@@ -506,4 +511,77 @@ body {
   .schema-designer-canvas-card .ant-card-body {
     min-height: 420px;
   }
+}
+/* Shared reference field picker */
+.reference-field-trigger {
+  width: 100%;
+  min-height: 32px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-modal-backdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 2050;
+}
+
+.reference-modal-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.24);
+  max-height: min(680px, 90vh);
+  max-width: 760px;
+  overflow: hidden;
+  width: min(100%, 760px);
+}
+
+.reference-modal-header,
+.reference-modal-footer {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.reference-modal-header {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.reference-modal-header h5 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.reference-modal-body {
+  max-height: 56vh;
+  overflow: auto;
+  padding: 16px;
+}
+
+.reference-modal-footer {
+  border-top: 1px solid #e5e7eb;
+  justify-content: flex-end;
+}
+
+.reference-table-picker {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.reference-table-picker-toolbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }

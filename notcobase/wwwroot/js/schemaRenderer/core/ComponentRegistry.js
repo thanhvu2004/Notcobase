@@ -20,6 +20,9 @@
   } = antd;
 
   const components = new Map();
+  const ReferencePicker = window.Notcobase.ReferenceField?.ReferencePicker || function MissingReferencePicker() {
+    return null;
+  };
 
   function registerComponent(name, component, options) {
     components.set(name, {
@@ -79,6 +82,7 @@
     ["Input.TextArea", Input.TextArea, { label: "Text Area", category: "Fields", field: true }],
     ["InputNumber", InputNumber, { label: "Number", category: "Fields", field: true }],
     ["Radio.Group", Radio.Group, { label: "Radio Group", category: "Fields", field: true }],
+    ["Reference", ReferencePicker, { label: "Reference", category: "Fields", field: true }],
     ["Select", Select, { category: "Fields", field: true }],
     ["Space", Space, { category: "Layout", container: true }],
     ["Switch", Switch, { category: "Fields", field: true }],

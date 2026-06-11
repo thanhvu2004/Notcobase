@@ -19,7 +19,14 @@ function CreateRecordModal({ isOpen, activeTable, columns, recordForm, onRecordF
             "div",
             { className: "mb-3", key: column.id },
             h("label", { className: "form-label" }, column.name, column.isRequired && h("span", { className: "text-danger" }, " *"),),
-            column.fieldType === "checkbox"
+            column.fieldType === "reference"
+              ? h(app.ReferenceField.ReferencePicker, {
+                  value: recordForm[column.name],
+                  componentPropsJson: column.componentPropsJson,
+                  placeholder: "Select records",
+                  onChange: (value) => onRecordFormChange({ ...recordForm, [column.name]: value }),
+                })
+              : column.fieldType === "checkbox"
               ? h(
                   "div",
                   { className: "form-check" },

@@ -181,6 +181,8 @@
         return { schemaType: "boolean", component: "Switch" };
       case "select":
         return { schemaType: "string", component: "Select" };
+      case "reference":
+        return { schemaType: "array", component: "Reference" };
       default:
         return { schemaType: "string", component: "Input" };
     }
@@ -229,6 +231,7 @@
       "x-index": index,
       "x-component-props": {
         placeholder: column.name,
+        ...(String(column.fieldType || "").toLowerCase() === "reference" ? { pickerVariant: "table" } : {}),
         ...componentProps,
       },
       name: propertyKey,

@@ -79,6 +79,12 @@
             style: { width: "100%" },
           });
         }
+      case "reference":
+        return h(window.Notcobase.ReferenceField.ReferencePicker, {
+          ...common,
+          componentPropsJson: componentProps,
+          pickerVariant: "table",
+        });
       case "checkbox":
         return h(Checkbox, null);
       default:
@@ -130,6 +136,10 @@
       return parseBlockListValue(value).join(", ");
     }
 
+    if (type === "reference") {
+      return window.Notcobase.ReferenceField.stringifyIds(value);
+    }
+
     if (Array.isArray(value)) {
       return value.join(", ");
     }
@@ -145,11 +155,18 @@
     return String(value ?? "");
   }
 
-  function renderBlockTableValue(value, fieldType) {
+  function renderBlockTableValue(value, fieldType, componentPropsJson) {
     const type = String(fieldType || "").toLowerCase();
 
     if (type === "checkbox" || type === "boolean") {
       return h(Checkbox, { checked: isTruthyBlockValue(value), disabled: true });
+    }
+
+    if (type === "reference") {
+      return h(window.Notcobase.ReferenceField.ReferenceDisplay, {
+        value,
+        componentPropsJson,
+      });
     }
 
     const displayValue = formatBlockTableValue(value, fieldType);
@@ -557,12 +574,14 @@
         const dataIndex = getBlockColumnDataIndex(column);
         const tableColumn = tableColumnMap.get(String(dataIndex || column.title).toLowerCase());
         const fieldType = column.fieldType || tableColumn?.fieldType;
+        const componentPropsJson = column.componentPropsJson || tableColumn?.componentPropsJson;
 
         return {
           ...column,
           fieldType,
+          componentPropsJson,
           key: getBlockColumnKey(column),
-          render: (value) => renderBlockTableValue(value, fieldType),
+          render: (value) => renderBlockTableValue(value, fieldType, componentPropsJson),
         };
       });
     }, [tableDetails, config.columns]);

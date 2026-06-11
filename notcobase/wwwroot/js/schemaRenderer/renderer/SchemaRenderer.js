@@ -208,7 +208,7 @@
     const componentName = SchemaUtils.inferComponent(schema);
     const registryItem = ComponentRegistry.getComponent(componentName);
 
-    if (!schema["x-decorator"] && context.name && context.parentSchema && SchemaUtils.isFormLikeBlock(context.parentSchema) && registryItem?.field) {
+    if (!schema["x-decorator"] && context.name && context.insideFormBlock && registryItem?.field) {
       return h(
         Form.Item,
         {
@@ -404,6 +404,32 @@
     return h(DesignerNodeFrame, { key: schema.id, schema, context }, node);
   }
 
+  function extractInitialValues(schema, acc = {}) {
+    if (!schema) return acc;
+
+    const name = schema.name;
+    const defaultValue = schema?.["x-component-props"]?.defaultValue;
+
+    const componentName = SchemaUtils.inferComponent(schema);
+    const registryItem = ComponentRegistry.getComponent(componentName);
+
+    if (
+      name &&
+      defaultValue !== undefined &&
+      registryItem?.field
+    ) {
+      acc[name] = defaultValue;
+    }
+
+    if (schema.properties && typeof schema.properties === "object") {
+      Object.entries(schema.properties).forEach(([key, child]) => {
+        extractInitialValues(child, acc);
+      });
+    }
+
+    return acc;
+  }
+
   function SchemaRenderer({ schema, initialValues, mode, runtimeContext, onNodeSelect, onMoveNode, onDeleteNode, onAddComponent, onRecordSaved, onRecordDeleted, onSubmit, onValuesChange, formProps }) {
     const [form] = Form.useForm();
     const normalizedSchema = useMemo(() => SchemaUtils.ensureNodeIds(schema || {}), [schema]);
@@ -420,13 +446,38 @@
     }
 
     const rootComponent = SchemaUtils.inferComponent(normalizedSchema);
+
+    const computedInitialValues = useMemo(() => {
+      return {
+        ...extractInitialValues(normalizedSchema),
+        ...initialValues,
+      };
+    }, [initialValues, normalizedSchema]);
+
+    const hasInitializedRef = React.useRef(false);
+
+    React.useEffect(() => {
+      if (!form) return;
+      if (!normalizedSchema) return;
+      if (hasInitializedRef.current) return;
+
+      const t = setTimeout(() => {
+        form.setFieldsValue(computedInitialValues);
+        hasInitializedRef.current = true;
+      }, 0);
+
+      return () => clearTimeout(t);
+    }, [form, computedInitialValues, normalizedSchema]);
+
+    console.log("computedInitialValues", computedInitialValues);
     const rootProps = {
       layout: "vertical",
-      initialValues,
+      initialValues: computedInitialValues,
       onValuesChange,
       ...normalizedSchema["x-component-props"],
       ...formProps,
     };
+    console.log("rootProps", rootProps);
 
     if (rootComponent === "Form") {
       rootProps.form = form;

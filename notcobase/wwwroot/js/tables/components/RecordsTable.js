@@ -523,7 +523,12 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                             className: "btn btn-link text-start text-decoration-none p-0 w-100 pe-auto",
                             onClick: (event) => onEditCell(event, record, column),
                           },
-                          formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),
+                          column.fieldType === "reference"
+                            ? h(app.ReferenceField.ReferenceDisplay, {
+                                value: record.data?.[column.name],
+                                componentPropsJson: column.componentPropsJson,
+                              })
+                            : formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),
                         ),
                       ),
                     ),

@@ -57,6 +57,19 @@ function EditFieldModal({ isOpen, editingColumn, editFieldForm, onFormChange, on
             "Configure options"
           )
         ),
+        editFieldForm.fieldType === "reference" && h(
+          "div",
+          { className: "mt-2" },
+          h(
+            "button",
+            {
+              type: "button",
+              className: "btn btn-sm btn-outline-secondary",
+              onClick: () => onConfigureOptions && onConfigureOptions("reference"),
+            },
+            "Configure reference"
+          )
+        ),
       ),
       h(
         "div",

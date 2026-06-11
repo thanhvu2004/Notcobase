@@ -22,6 +22,7 @@ const {
   CreateRecordModal,
   EditFieldModal,
   ComboboxOptionsModal,
+  ReferenceModal,
 } = app;
 
 function can(permission) {
@@ -54,6 +55,8 @@ function TablesApp() {
   const [showCreateRecord, setShowCreateRecord] = useState(false);
   const [showComboboxOptionsModal, setShowComboboxOptionsModal] = useState(false);
   const [newComboboxColumn, setNewComboboxColumn] = useState(null);
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
+  const [referenceColumn, setReferenceColumn] = useState(null);
 
 
   const selectedTableId = tableState.selectedTable?.id;
@@ -223,6 +226,9 @@ function TablesApp() {
       if (columnState.fieldForm.fieldType === "select") {
         setNewComboboxColumn(newColumn);
         setShowComboboxOptionsModal(true);
+      } else if (columnState.fieldForm.fieldType === "reference") {
+        setReferenceColumn(newColumn);
+        setShowReferenceModal(true);
       }
     } catch (err) {
       setError(err.message);
@@ -241,6 +247,7 @@ function TablesApp() {
         name: columnState.editFieldForm.name.trim(),
         fieldType: columnState.editFieldForm.fieldType,
         isRequired: columnState.editFieldForm.isRequired,
+        componentPropsJson: columnState.editingColumn.componentPropsJson,
       };
       const editingId = columnState.editingColumn.id;
       await ColumnOperations.updateColumn(selectedTableId, editingId, data);
@@ -250,10 +257,12 @@ function TablesApp() {
       // If the updated field is a select, open the options modal so the user can manage options
       if (data.fieldType === "select") {
         const updated = columnState.columns.find((c) => c.id === editingId);
-        if (updated) {
-          setNewComboboxColumn(updated);
-          setShowComboboxOptionsModal(true);
-        }
+        setNewComboboxColumn(updated || { ...columnState.editingColumn, ...data });
+        setShowComboboxOptionsModal(true);
+      } else if (data.fieldType === "reference") {
+        const updated = columnState.columns.find((c) => c.id === editingId);
+        setReferenceColumn(updated || { ...columnState.editingColumn, ...data });
+        setShowReferenceModal(true);
       }
 
       setError(null);
@@ -289,6 +298,28 @@ function TablesApp() {
       await ColumnOperations.updateColumn(selectedTableId, newComboboxColumn.id, data);
       setShowComboboxOptionsModal(false);
       setNewComboboxColumn(null);
+      await refreshSelectedTable();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveReferenceConfig = async (componentPropsJson) => {
+    if (!selectedTableId || !referenceColumn) return;
+
+    try {
+      setSaving(true);
+      const data = {
+        name: referenceColumn.name,
+        fieldType: "reference",
+        isRequired: referenceColumn.isRequired,
+        componentPropsJson,
+      };
+      await ColumnOperations.updateColumn(selectedTableId, referenceColumn.id, data);
+      setShowReferenceModal(false);
+      setReferenceColumn(null);
       await refreshSelectedTable();
     } catch (err) {
       setError(err.message);
@@ -541,9 +572,14 @@ function TablesApp() {
         onFormChange: columnState.setEditFieldForm,
         onSubmit: updateColumn,
         onClose: columnState.resetEditFieldForm,
-        onConfigureOptions: () => {
-          setNewComboboxColumn(columnState.editingColumn);
-          setShowComboboxOptionsModal(true);
+        onConfigureOptions: (kind) => {
+          if (kind === "reference") {
+            setReferenceColumn(columnState.editingColumn);
+            setShowReferenceModal(true);
+          } else {
+            setNewComboboxColumn(columnState.editingColumn);
+            setShowComboboxOptionsModal(true);
+          }
           columnState.resetEditFieldForm();
         },
         saving: saving,
@@ -551,7 +587,7 @@ function TablesApp() {
     ),
 
     withPermission(
-      "columns.create",
+      "columns.edit",
       h(ComboboxOptionsModal, {
         isOpen: showComboboxOptionsModal,
         column: newComboboxColumn,
@@ -559,6 +595,20 @@ function TablesApp() {
         onClose: () => {
           setShowComboboxOptionsModal(false);
           setNewComboboxColumn(null);
+        },
+      }),
+    ),
+
+    withPermission(
+      "columns.edit",
+      h(ReferenceModal, {
+        isOpen: showReferenceModal,
+        column: referenceColumn,
+        tables: tableState.tables,
+        onSave: saveReferenceConfig,
+        onClose: () => {
+          setShowReferenceModal(false);
+          setReferenceColumn(null);
         },
       }),
     ),

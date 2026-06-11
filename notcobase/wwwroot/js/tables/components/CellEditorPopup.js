@@ -33,7 +33,18 @@
         { className: "small fw-semibold mb-2" },
         editor.fieldType === "select" ? "Select value" : "Edit value",
       ),
-      editor.fieldType === "checkbox"
+      editor.fieldType === "reference"
+        ? h(
+            "div",
+            { className: "mb-3" },
+            h(app.ReferenceField.ReferencePicker, {
+              value: editor.value,
+              componentPropsJson: editor.componentPropsJson,
+              placeholder: "Select records",
+              onChange: onValueChange,
+            }),
+          )
+        : editor.fieldType === "checkbox"
         ? h(
             "div",
             { className: "form-check mb-3" },

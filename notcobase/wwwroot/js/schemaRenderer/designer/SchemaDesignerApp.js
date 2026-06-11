@@ -252,24 +252,24 @@
           h(
             "div",
             { className: mode === "designer" ? "schema-designer-grid" : "none" },
-            mode === "designer" && h(
-              Card,
-              { title: "Schema JSON", size: "small", className: "schema-designer-json-panel" },
-              h(Input.TextArea, {
-                className: "schema-designer-editor",
-                value: schemaText,
-                spellCheck: false,
-                onChange: handleSchemaTextChange,
-                ref: (el) => {
-                  if (el) {
-                    const textarea = el.resizableTextArea?.textArea || el;
-                    textarea.style.height = "auto";
-                    textarea.style.height = `${textarea.scrollHeight + 3}px`;
-                  }
-                },
-              }),
-              schemaError && h(Typography.Text, { type: "danger" }, schemaError),
-            ),
+            // mode === "designer" && h(
+            //   Card,
+            //   { title: "Schema JSON", size: "small", className: "schema-designer-json-panel" },
+            //   h(Input.TextArea, {
+            //     className: "schema-designer-editor",
+            //     value: schemaText,
+            //     spellCheck: false,
+            //     onChange: handleSchemaTextChange,
+            //     ref: (el) => {
+            //       if (el) {
+            //         const textarea = el.resizableTextArea?.textArea || el;
+            //         textarea.style.height = "auto";
+            //         textarea.style.height = `${textarea.scrollHeight + 3}px`;
+            //       }
+            //     },
+            //   }),
+            //   schemaError && h(Typography.Text, { type: "danger" }, schemaError),
+            // ),
             h(
               Card,
               { title: mode === "designer" ? "Visual designer" : "Runtime preview", size: "small", className: "schema-designer-canvas-card" },

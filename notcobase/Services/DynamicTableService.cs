@@ -666,6 +666,7 @@ public class DynamicTableService
             "email" => "TEXT",
             "url" => "TEXT",
             "json" => "TEXT",
+            "reference" => "TEXT",
             _ => "TEXT"
         };
     }

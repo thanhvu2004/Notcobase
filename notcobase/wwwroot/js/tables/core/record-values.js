@@ -3,6 +3,8 @@
     return columns.reduce((values, column) => {
       if (column.fieldType === "checkbox") {
         values[column.name] = false;
+      } else if (column.fieldType === "reference") {
+        values[column.name] = [];
       } else if (column.fieldType === "select") {
         let defaultValue = "";
         try {
@@ -55,6 +57,10 @@
       return String(value ?? "");
     }
 
+    if (fieldType === "reference") {
+      return app.ReferenceField.stringifyIds(value);
+    }
+
     return value;
   }
 
@@ -65,6 +71,10 @@
 
     if (fieldType === "select") {
       return String(value ?? "");
+    }
+
+    if (fieldType === "reference") {
+      return app.ReferenceField.stringifyIds(value);
     }
 
     return String(value ?? "");
