@@ -11,6 +11,7 @@
     SchemaUtils,
     useDesignerStore,
     BlockComponents,
+    BlockUtils,
   } = window.Notcobase;
 
   function getRequired(schema, name) {
@@ -56,6 +57,10 @@
     if (componentName === "Select" || componentName === "Radio.Group") {
       props.options = getOptions(schema, props);
       props.placeholder = props.placeholder || schema.placeholder || (schema.title ? `Select ${schema.title}` : undefined);
+    }
+
+    if (context.insideFormBlock && registryItem?.field) {
+      delete props.defaultValue;
     }
 
     if (schema.disabled !== undefined) {
@@ -395,6 +400,22 @@
       return null;
     }
 
+    const visibleRule = schema?.["x-component-props"]?.visibleWhen;
+
+    if (visibleRule) {
+      const currentValues = BlockUtils.addFieldValueAliases(
+        context.rootSchema || schema,
+        context.runtimeFormValues ??
+          (typeof context.form?.getFieldsValue === "function"
+            ? context.form.getFieldsValue(true)
+            : {}),
+      );
+
+      if (!BlockUtils.evaluateVisibleWhen(visibleRule, currentValues)) {
+        return null;
+      }
+    }
+
     const node = renderWithDecorator(schema, renderComponent(schema, context), context);
 
     if (context.mode !== "designer") {
@@ -408,6 +429,7 @@
     if (!schema) return acc;
 
     const name = schema.name;
+    const fieldName = schema["x-field"];
     const defaultValue = schema?.["x-component-props"]?.defaultValue;
 
     const componentName = SchemaUtils.inferComponent(schema);
@@ -419,6 +441,9 @@
       registryItem?.field
     ) {
       acc[name] = defaultValue;
+      if (fieldName && acc[fieldName] === undefined) {
+        acc[fieldName] = defaultValue;
+      }
     }
 
     if (schema.properties && typeof schema.properties === "object") {
@@ -432,6 +457,15 @@
 
   function SchemaRenderer({ schema, initialValues, mode, runtimeContext, onNodeSelect, onMoveNode, onDeleteNode, onAddComponent, onRecordSaved, onRecordDeleted, onSubmit, onValuesChange, formProps }) {
     const [form] = Form.useForm();
+    const [, forceRender] = React.useState(0);
+    const runtimeFormValuesRef = React.useRef({});
+    const refreshVisibility = (values) => {
+      if (values && typeof values === "object") {
+        runtimeFormValuesRef.current = values;
+      }
+
+      forceRender((value) => value + 1);
+    };
     const normalizedSchema = useMemo(() => SchemaUtils.ensureNodeIds(schema || {}), [schema]);
 
     React.useEffect(() => {
@@ -448,10 +482,11 @@
     const rootComponent = SchemaUtils.inferComponent(normalizedSchema);
 
     const computedInitialValues = useMemo(() => {
-      return {
+      const values = {
         ...extractInitialValues(normalizedSchema),
         ...initialValues,
       };
+      return BlockUtils.addFieldValueAliases(normalizedSchema, values);
     }, [initialValues, normalizedSchema]);
 
     const hasInitializedRef = React.useRef(false);
@@ -461,24 +496,23 @@
       if (!normalizedSchema) return;
       if (hasInitializedRef.current) return;
 
-      const t = setTimeout(() => {
-        form.setFieldsValue(computedInitialValues);
-        hasInitializedRef.current = true;
-      }, 0);
-
-      return () => clearTimeout(t);
+      form.setFieldsValue(computedInitialValues);
+      runtimeFormValuesRef.current = computedInitialValues;
+      hasInitializedRef.current = true;
     }, [form, computedInitialValues, normalizedSchema]);
 
-    console.log("computedInitialValues", computedInitialValues);
     const rootProps = {
       layout: "vertical",
       initialValues: computedInitialValues,
-      onValuesChange,
+      onValuesChange: (...args) => {
+        const allValues = args[1] || (typeof form?.getFieldsValue === "function" ? form.getFieldsValue(true) : {});
+        runtimeFormValuesRef.current = BlockUtils.addFieldValueAliases(normalizedSchema, allValues);
+        forceRender((value) => value + 1);
+        onValuesChange?.(...args);
+      },
       ...normalizedSchema["x-component-props"],
       ...formProps,
     };
-    console.log("rootProps", rootProps);
-
     if (rootComponent === "Form") {
       rootProps.form = form;
       rootProps.onFinish = onSubmit;
@@ -492,7 +526,10 @@
         parentSchema: null,
         path: [normalizedSchema.name || "root"],
         form,
+        rootSchema: normalizedSchema,
         rootProps,
+        runtimeFormValues: runtimeFormValuesRef.current,
+        refreshVisibility,
         mode: mode || "runtime",
         runtimeContext,
         onMoveNode,

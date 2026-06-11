@@ -219,6 +219,7 @@
     const tableId = config.tableId;
     const recordId = BlockUtils.resolveRecordId(config, context.runtimeContext);
     const [form] = Form.useForm();
+    const [, forceVisibilityRefresh] = useState(0);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
@@ -263,7 +264,13 @@
           setError("");
           const record = await RecordsApi.get(tableId, recordId);
           if (!cancelled) {
-            form.setFieldsValue(BlockUtils.mapRecordToFormValues(schema, record));
+            const mappedValues = BlockUtils.mapRecordToFormValues(
+              schema,
+              record,
+            );
+
+            form.setFieldsValue(mappedValues);
+            context.refreshVisibility?.(mappedValues);
           }
         } catch (loadError) {
           if (!cancelled) {
@@ -514,7 +521,11 @@
             layout: config.layout || props.layout || "vertical",
             onFinish: handleSubmit,
             disabled: designer,
-            onValuesChange: (_, allValues) => {},
+            onValuesChange: (_, allValues) => {
+              context.runtimeFormValues = allValues;
+              context.refreshVisibility?.(allValues);
+              forceVisibilityRefresh((value) => value + 1);
+            },
           },
           children,
           !designer && tableId && h(

@@ -435,6 +435,63 @@
             }),
           ),
         !isBlock &&
+          h(Divider, { orientation: "left", plain: true }, "Visibility"),
+        !isBlock &&
+          h(
+            Form.Item,
+            { label: "Visible when field" },
+            h(Input, {
+              value: node?.["x-component-props"]?.visibleWhen?.field || "",
+              placeholder: "Field name",
+              onChange: (event) => updateSelectedNode((draft) => {
+                draft["x-component-props"] = draft["x-component-props"] || {};
+                draft["x-component-props"].visibleWhen = {
+                  ...(draft["x-component-props"].visibleWhen || {}),
+                  field: event.target.value,
+                };
+                return draft;
+              }),
+            }),
+          ),
+        !isBlock &&
+          h(
+            Form.Item,
+            { label: "Operator" },
+            h(Select, {
+              value: node?.["x-component-props"]?.visibleWhen?.operator || "=",
+              options: [
+                { label: "Equals", value: "=" },
+                { label: "Not Equals", value: "!=" },
+                { label: "Contains", value: "contains" },
+              ],
+              onChange: (value) => updateSelectedNode((draft) => {
+                draft["x-component-props"] = draft["x-component-props"] || {};
+                draft["x-component-props"].visibleWhen = {
+                  ...(draft["x-component-props"].visibleWhen || {}),
+                  operator: value,
+                };
+                return draft;
+              }),
+            }),
+          ),
+        !isBlock &&
+          h(
+            Form.Item,
+            { label: "Value" },
+            h(Input, {
+              value: node?.["x-component-props"]?.visibleWhen?.value || "",
+              placeholder: "Match value",
+              onChange: (event) => updateSelectedNode((draft) => {
+                draft["x-component-props"] = draft["x-component-props"] || {};
+                draft["x-component-props"].visibleWhen = {
+                  ...(draft["x-component-props"].visibleWhen || {}),
+                  value: event.target.value,
+                };
+                return draft;
+              }),
+            }),
+          ),
+        !isBlock &&
           h(
             Form.Item,
             null,

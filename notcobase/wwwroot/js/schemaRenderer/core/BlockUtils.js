@@ -109,15 +109,111 @@
     return normalized;
   }
 
+  function getValueByAlias(values, field) {
+    if (!values || !field) {
+      return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(values, field)) {
+      return values[field];
+    }
+
+    const normalizedField = String(field).normalize("NFC").toLowerCase();
+    const match = Object.entries(values).find(([key]) => String(key).normalize("NFC").toLowerCase() === normalizedField);
+    return match ? match[1] : undefined;
+  }
+
+  function addFieldValueAliases(schema, values) {
+    const aliasedValues = { ...(values || {}) };
+
+    function addAliasesForNode(node, propertyKey) {
+      if (!node || typeof node !== "object") {
+        return;
+      }
+
+      const aliases = [
+        propertyKey,
+        node.name,
+        node["x-field"],
+        node.title,
+      ].filter(Boolean);
+
+      const sourceAlias = aliases.find((alias) => Object.prototype.hasOwnProperty.call(aliasedValues, alias));
+      if (sourceAlias) {
+        aliases.forEach((alias) => {
+          if (!Object.prototype.hasOwnProperty.call(aliasedValues, alias)) {
+            aliasedValues[alias] = aliasedValues[sourceAlias];
+          }
+        });
+      }
+
+      SchemaUtils.sortSchemaEntries(node.properties).forEach(([childKey, childSchema]) => {
+        addAliasesForNode(childSchema, childKey);
+      });
+    }
+
+    addAliasesForNode(schema, schema?.name || "root");
+    return aliasedValues;
+  }
+
+  function evaluateVisibleWhen(rule, values) {
+    if (!rule?.field) {
+      return true;
+    }
+
+    const currentValue = getValueByAlias(values, rule.field);
+
+    switch (rule.operator || "=") {
+      case "=":
+        return currentValue === rule.value;
+      case "!=":
+        return currentValue !== rule.value;
+      case "contains":
+        return Array.isArray(currentValue)
+          ? currentValue.includes(rule.value)
+          : String(currentValue || "").includes(String(rule.value));
+      default:
+        return true;
+    }
+  }
+
   function collectBlockFormValues(schema, form, submittedValues) {
     const formValues = typeof form?.getFieldsValue === "function"
       ? form.getFieldsValue(true)
       : {};
 
-    return {
+    const mergedValues = {
       ...formValues,
       ...(submittedValues || {}),
     };
+    const aliasedValues = addFieldValueAliases(schema, mergedValues);
+
+    function isVisible(node) {
+      return evaluateVisibleWhen(
+        node?.["x-component-props"]?.visibleWhen,
+        aliasedValues,
+      );
+    }
+
+    function removeHiddenFields(node) {
+      SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
+        if (childSchema?.properties) {
+          removeHiddenFields(childSchema);
+        }
+
+        if (!isVisible(childSchema)) {
+          const fieldName = childSchema?.["x-field"] || key;
+          delete mergedValues[key];
+          delete mergedValues[fieldName];
+          delete aliasedValues[key];
+          delete aliasedValues[fieldName];
+        }
+      });
+    }
+
+    removeHiddenFields(schema);
+
+    return mergedValues;
   }
 
   function mapRecordToFormValues(schema, record) {
@@ -342,8 +438,10 @@
     buildColumnsFromTable,
     buildFormFieldsFromColumns,
     buildRecordDataFromSchema,
+    addFieldValueAliases,
     collectBlockFormValues,
     createPropertySchemaFromColumn,
+    evaluateVisibleWhen,
     fieldTypeToSchemaComponent,
     getFormBlockSelectedColumns,
     getBlockConfig,
