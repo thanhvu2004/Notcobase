@@ -84,6 +84,7 @@
           ...common,
           componentPropsJson: componentProps,
           pickerVariant: "table",
+          designerMode: true,
         });
       case "checkbox":
         return h(Checkbox, null);
@@ -522,8 +523,12 @@
             onFinish: handleSubmit,
             disabled: designer,
             onValuesChange: (_, allValues) => {
-              context.runtimeFormValues = allValues;
-              context.refreshVisibility?.(allValues);
+              const mergedValues = {
+                ...(context.runtimeFormValues || {}),
+                ...allValues,
+              };
+              context.runtimeFormValues = mergedValues;
+              context.refreshVisibility?.(mergedValues);
               forceVisibilityRefresh((value) => value + 1);
             },
           },

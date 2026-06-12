@@ -106,7 +106,7 @@
     });
   }
 
-  function ReferenceTablePicker({ value, onChange, config, disabled }) {
+  function ReferenceTablePicker({ value, onChange, config, disabled, designerMode }) {
     const selectedIds = useMemo(() => parseIds(value), [value]);
     const [table, setTable] = useState(null);
     const [records, setRecords] = useState([]);
@@ -140,6 +140,11 @@
     }
 
     async function loadData() {
+      if (designerMode) {
+        setTable(null);
+        setRecords([]);
+        return;
+      }
       if (!config.targetTableId) {
         setTable(null);
         setRecords([]);
@@ -163,8 +168,14 @@
     }
 
     useEffect(() => {
+      if (designerMode) {
+        setTable(null);
+        setRecords([]);
+        return;
+      }
+
       loadData();
-    }, [config.targetTableId]);
+    }, [config.targetTableId, designerMode]);
 
     function toggleId(id, checked) {
       const next = new Set(selectedIds);
@@ -210,15 +221,19 @@
       }
     }
 
-    const rows = records.map((record) => ({ ...record.data, id: record.id, __record: record }));
-    const dataColumns = (table?.columns || []).map((column) => ({
-      title: column.name,
-      dataIndex: column.name,
-      key: column.name,
-      render: (cellValue) => column.fieldType === "reference"
-        ? h(ReferenceDisplay, { value: cellValue, componentPropsJson: column.componentPropsJson })
-        : String(cellValue ?? ""),
-    }));
+    const rows = designerMode
+      ? []
+      : records.map((record) => ({ ...record.data, id: record.id, __record: record }));
+    const dataColumns = designerMode
+      ? []
+      : (table?.columns || []).map((column) => ({
+        title: column.name,
+        dataIndex: column.name,
+        key: column.name,
+        render: (cellValue) => column.fieldType === "reference"
+          ? h(ReferenceDisplay, { value: cellValue, componentPropsJson: column.componentPropsJson })
+          : String(cellValue ?? ""),
+      }));
 
     const columns = [
       {
@@ -253,6 +268,13 @@
       },
     ];
 
+    if (designerMode) {
+      return h(
+        "div",
+        { className: "reference-table-picker text-muted" },
+        "Reference table field (designer mode)",
+      );
+    }
     if (!config.targetTableId) {
       return h("div", { className: "text-muted" }, "Configure a target table for this reference field.");
     }
@@ -364,7 +386,7 @@
     );
   }
 
-  function ReferencePicker({ value, onChange, componentPropsJson, targetTableId, displayColumnId, pickerVariant, disabled, placeholder }) {
+  function ReferencePicker({ value, onChange, componentPropsJson, targetTableId, displayColumnId, pickerVariant, disabled, placeholder, designerMode }) {
     const config = {
       ...parseProps(componentPropsJson),
       ...(targetTableId != null ? { targetTableId } : {}),
@@ -372,7 +394,7 @@
     };
 
     if (pickerVariant === "table") {
-      return h(ReferenceTablePicker, { value, onChange, config, disabled });
+      return h(ReferenceTablePicker, { value, onChange, config, disabled, designerMode });
     }
 
     const selectedIds = useMemo(() => parseIds(value), [value]);
@@ -412,7 +434,7 @@
     }, [selectedIds.join(",")]);
 
     useEffect(() => {
-      if (!config.targetTableId) {
+      if (designerMode || !config.targetTableId) {
         setTable(null);
         setRecords([]);
         return;
@@ -442,7 +464,7 @@
       return () => {
         cancelled = true;
       };
-    }, [config.targetTableId]);
+    }, [config.targetTableId, designerMode]);
 
     function toggleId(id, checked) {
       setDraftIds((current) => {
@@ -458,6 +480,13 @@
       setOpen(false);
     }
 
+    if (designerMode) {
+      return h(
+        "div",
+        { className: "text-muted small" },
+        "Reference field (designer mode)",
+      );
+    }
     return h(
       "div",
       { className: "reference-field" },

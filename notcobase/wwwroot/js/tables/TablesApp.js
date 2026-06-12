@@ -39,6 +39,17 @@ function withPermission(permission, component) {
     : null;
 }
 
+function broadcastSchemaMetadataChanged(tableId) {
+  try {
+    localStorage.setItem("notcobase:schema-metadata-changed", JSON.stringify({
+      tableId: tableId ?? null,
+      at: Date.now(),
+    }));
+  } catch {
+    // Ignore cross-tab notification failures.
+  }
+}
+
 function TablesApp() {
   // State management using custom hooks
   const tableState = useTableState();
@@ -129,6 +140,7 @@ function TablesApp() {
       setShowCreateTable(false);
       await fetchTables();
       await fetchTableDetails(table);
+      broadcastSchemaMetadataChanged(table.id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -189,6 +201,7 @@ function TablesApp() {
       );
       tableState.resetEditTableForm();
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(tableState.editingTable.id);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -208,6 +221,7 @@ function TablesApp() {
         recordState.setRecords([]);
       }
       await fetchTables();
+      broadcastSchemaMetadataChanged(table.id);
     } catch (err) {
       setError(err.message);
     }
@@ -222,6 +236,7 @@ function TablesApp() {
       const newColumn = await ColumnOperations.createColumn(selectedTableId, columnState.fieldForm);
       columnState.resetFieldForm();
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(selectedTableId);
       
       if (columnState.fieldForm.fieldType === "select") {
         setNewComboboxColumn(newColumn);
@@ -253,6 +268,7 @@ function TablesApp() {
       await ColumnOperations.updateColumn(selectedTableId, editingId, data);
       columnState.resetEditFieldForm();
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(selectedTableId);
 
       // If the updated field is a select, open the options modal so the user can manage options
       if (data.fieldType === "select") {
@@ -279,6 +295,7 @@ function TablesApp() {
     try {
       await ColumnOperations.deleteColumn(selectedTableId, column.id);
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(selectedTableId);
     } catch (err) {
       setError(err.message);
     }
@@ -299,6 +316,7 @@ function TablesApp() {
       setShowComboboxOptionsModal(false);
       setNewComboboxColumn(null);
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(selectedTableId);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -321,6 +339,7 @@ function TablesApp() {
       setShowReferenceModal(false);
       setReferenceColumn(null);
       await refreshSelectedTable();
+      broadcastSchemaMetadataChanged(selectedTableId);
     } catch (err) {
       setError(err.message);
     } finally {

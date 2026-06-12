@@ -19,12 +19,18 @@ public class TablesController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly DynamicTableService _dynamicTableService;
+    private readonly SchemaMetadataSyncService _schemaMetadataSyncService;
     private readonly ILogger<TablesController> _logger;
 
-    public TablesController(AppDbContext context, DynamicTableService dynamicTableService, ILogger<TablesController> logger)
+    public TablesController(
+        AppDbContext context,
+        DynamicTableService dynamicTableService,
+        SchemaMetadataSyncService schemaMetadataSyncService,
+        ILogger<TablesController> logger)
     {
         _context = context;
         _dynamicTableService = dynamicTableService;
+        _schemaMetadataSyncService = schemaMetadataSyncService;
         _logger = logger;
     }
 
@@ -384,6 +390,7 @@ public class TablesController : ControllerBase
         if (table == null)
             return NotFound();
 
+        var oldTableName = table.Name;
         var oldParentTableId = table.ParentTableId;
         var oldInheritProperties = table.InheritProperties;
         var tableMap = await _context.Tables
@@ -445,6 +452,7 @@ public class TablesController : ControllerBase
         }
 
         await transaction.CommitAsync();
+        await _schemaMetadataSyncService.SyncTableAsync(table.Id, oldTableName);
         return NoContent();
     }
 

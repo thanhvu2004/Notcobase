@@ -52,6 +52,27 @@
     }, []);
 
     useEffect(() => {
+      function handleMetadataChange(event) {
+        if (event.key !== "notcobase:schema-metadata-changed" || !event.newValue) {
+          return;
+        }
+
+        TablesApi.list()
+          .then(setTables)
+          .catch((error) => message.error(error.message));
+
+        if (activePageId) {
+          loadPage(activePageId)
+            .then(() => message.info("Schema metadata refreshed"))
+            .catch((error) => message.error(error.message));
+        }
+      }
+
+      window.addEventListener("storage", handleMetadataChange);
+      return () => window.removeEventListener("storage", handleMetadataChange);
+    }, [activePageId]);
+
+    useEffect(() => {
       setSchemaText(JSON.stringify(schema, null, 2));
     }, [schema]);
 
@@ -140,6 +161,10 @@
         return;
       }
 
+      if (!window.confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
+        return;
+      }
+      
       SchemaPagesApi.delete(activePageId)
         .then(() => {
           const remainingPages = pages.filter((item) => item.id !== activePageId);

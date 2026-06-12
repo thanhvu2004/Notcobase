@@ -15,12 +15,18 @@ public class ColumnsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly DynamicTableService _dynamicTableService;
+    private readonly SchemaMetadataSyncService _schemaMetadataSyncService;
     private readonly ILogger<ColumnsController> _logger;
 
-    public ColumnsController(AppDbContext context, DynamicTableService dynamicTableService, ILogger<ColumnsController> logger)
+    public ColumnsController(
+        AppDbContext context,
+        DynamicTableService dynamicTableService,
+        SchemaMetadataSyncService schemaMetadataSyncService,
+        ILogger<ColumnsController> logger)
     {
         _context = context;
         _dynamicTableService = dynamicTableService;
+        _schemaMetadataSyncService = schemaMetadataSyncService;
         _logger = logger;
     }
 
@@ -94,7 +100,8 @@ public class ColumnsController : ControllerBase
             Name = dto.Name,
             FieldType = dto.FieldType,
             TableId = tableId,
-            IsRequired = dto.IsRequired
+            IsRequired = dto.IsRequired,
+            ComponentPropsJson = dto.ComponentPropsJson ?? "{}"
         };
 
         _context.Columns.Add(column);
@@ -127,6 +134,8 @@ public class ColumnsController : ControllerBase
             _logger.LogError(ex, $"Error adding column to physical tables for table ID {tableId}");
             return StatusCode(500, "Error adding column to physical tables");
         }
+
+        await _schemaMetadataSyncService.SyncTableAsync(tableId);
 
         return CreatedAtAction(nameof(GetColumns), new { tableId }, new ColumnResponseDto
         {
@@ -202,6 +211,7 @@ public class ColumnsController : ControllerBase
 
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
+        await _schemaMetadataSyncService.SyncColumnUpdatedAsync(tableId, nameChanged ? oldName : null, nameChanged ? column.Name : null);
 
         return NoContent();
     }
@@ -231,8 +241,10 @@ public class ColumnsController : ControllerBase
             return StatusCode(500, "Error dropping column from physical tables");
         }
 
+        var deletedColumnName = column.Name;
         _context.Columns.Remove(column);
         await _context.SaveChangesAsync();
+        await _schemaMetadataSyncService.SyncColumnDeletedAsync(tableId, deletedColumnName);
 
         return NoContent();
     }
@@ -288,6 +300,7 @@ public class CreateColumnDto
     public required string Name { get; set; }
     public required string FieldType { get; set; }
     public bool IsRequired { get; set; }
+    public string? ComponentPropsJson { get; set; }
 }
 
 public class UpdateColumnDto

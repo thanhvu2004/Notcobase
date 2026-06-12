@@ -59,6 +59,10 @@
       props.placeholder = props.placeholder || schema.placeholder || (schema.title ? `Select ${schema.title}` : undefined);
     }
 
+    if (componentName === "Reference" && context.mode === "designer") {
+      props.designerMode = true;
+    }
+
     if (context.insideFormBlock && registryItem?.field) {
       delete props.defaultValue;
     }
@@ -305,6 +309,21 @@
       DesignerStore.getState().setDraggingNodeId(schema.id);
     }
 
+    function handleDrag(event) {
+      const edgeThreshold = 80;
+      const scrollSpeed = 20;
+
+      if (event.clientY < edgeThreshold) {
+        window.scrollBy(0, -scrollSpeed);
+      } else if (event.clientY > window.innerHeight - edgeThreshold) {
+        window.scrollBy(0, scrollSpeed);
+      }
+    }
+
+    function handleDragEnd() {
+      DesignerStore.getState().setDraggingNodeId(null);
+    }
+
     function handleDrop(event) {
       const sourceId = event.dataTransfer.getData("text/schema-node-id");
       if (!sourceId || sourceId === schema.id) {
@@ -319,7 +338,7 @@
         targetId: schema.id,
         placement: SchemaUtils.isContainerNode(schema) ? "inside" : "after",
       });
-      DesignerStore.getState().setDraggingNodeId(null);
+      // DesignerStore.getState().setDraggingNodeId(null);
     }
 
     function handleAddComponent(key, { domEvent }) {
@@ -340,6 +359,8 @@
         },
         onMouseLeave: () => DesignerStore.getState().setHoveredNodeId(null),
         onDragStart: handleDragStart,
+        onDrag: handleDrag,
+        onDragEnd: handleDragEnd,
         onDragOver: (event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = "move";
@@ -402,7 +423,7 @@
 
     const visibleRule = schema?.["x-component-props"]?.visibleWhen;
 
-    if (visibleRule) {
+    if (visibleRule && context.mode !== "designer") {
       const currentValues = BlockUtils.addFieldValueAliases(
         context.rootSchema || schema,
         context.runtimeFormValues ??
