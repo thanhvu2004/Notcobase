@@ -140,6 +140,7 @@
     node,
     componentName,
     tables,
+    pages,
     updateBlockProp,
     onFormBlockTableChange,
     onFormBlockColumnsChange,
@@ -148,6 +149,10 @@
     const tableOptions = (tables || []).map((table) => ({
       label: table.name,
       value: table.id,
+    }));
+    const pageOptions = (pages || []).map((page) => ({
+      label: page.name,
+      value: page.id,
     }));
 
     if (!SchemaUtils.isBlockComponent(componentName)) {
@@ -273,6 +278,135 @@
             onChange: (value) => updateBlockProp("pageSize", value || 10),
           }),
         ),
+      componentName === "TableBlock" &&
+        h(
+          React.Fragment,
+          null,
+          h(Divider, { orientation: "left", plain: true }, "Record navigation"),
+          h(
+            Form.Item,
+            { label: "Row click" },
+            h(Select, {
+              value: config.rowClickAction || "none",
+              options: [
+                { label: "No navigation", value: "none" },
+                { label: "Navigate to page", value: "navigate" },
+              ],
+              onChange: (value) => updateBlockProp("rowClickAction", value),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Row target page" },
+            h(Select, {
+              allowClear: true,
+              showSearch: true,
+              disabled: (config.rowClickAction || "none") !== "navigate",
+              value: config.rowTargetPageId ?? undefined,
+              options: pageOptions,
+              onChange: (value) => updateBlockProp("rowTargetPageId", value ?? null),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Row query params JSON" },
+            h(Input.TextArea, {
+              rows: 3,
+              disabled: (config.rowClickAction || "none") !== "navigate",
+              value: JSON.stringify(config.rowNavigationParams || {}, null, 2),
+              onChange: (event) => {
+                try {
+                  updateBlockProp("rowNavigationParams", parseJsonObject(event.target.value));
+                  setPropsError("");
+                } catch (error) {
+                  setPropsError(error.message);
+                }
+              },
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Create action" },
+            h(Select, {
+              value: config.createAction || "modal",
+              options: [
+                { label: "Open modal", value: "modal" },
+                { label: "Navigate to page", value: "navigate" },
+              ],
+              onChange: (value) => updateBlockProp("createAction", value),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Create target page" },
+            h(Select, {
+              allowClear: true,
+              showSearch: true,
+              disabled: (config.createAction || "modal") !== "navigate",
+              value: config.createTargetPageId ?? undefined,
+              options: pageOptions,
+              onChange: (value) => updateBlockProp("createTargetPageId", value ?? null),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Create query params JSON" },
+            h(Input.TextArea, {
+              rows: 3,
+              disabled: (config.createAction || "modal") !== "navigate",
+              value: JSON.stringify(config.createNavigationParams || {}, null, 2),
+              onChange: (event) => {
+                try {
+                  updateBlockProp("createNavigationParams", parseJsonObject(event.target.value));
+                  setPropsError("");
+                } catch (error) {
+                  setPropsError(error.message);
+                }
+              },
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Edit action" },
+            h(Select, {
+              value: config.editAction || "modal",
+              options: [
+                { label: "Open modal", value: "modal" },
+                { label: "Navigate to page", value: "navigate" },
+              ],
+              onChange: (value) => updateBlockProp("editAction", value),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Edit target page" },
+            h(Select, {
+              allowClear: true,
+              showSearch: true,
+              disabled: (config.editAction || "modal") !== "navigate",
+              value: config.editTargetPageId ?? undefined,
+              options: pageOptions,
+              onChange: (value) => updateBlockProp("editTargetPageId", value ?? null),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Edit query params JSON" },
+            h(Input.TextArea, {
+              rows: 3,
+              disabled: (config.editAction || "modal") !== "navigate",
+              value: JSON.stringify(config.editNavigationParams || {}, null, 2),
+              onChange: (event) => {
+                try {
+                  updateBlockProp("editNavigationParams", parseJsonObject(event.target.value));
+                  setPropsError("");
+                } catch (error) {
+                  setPropsError(error.message);
+                }
+              },
+            }),
+          ),
+        ),
       h(Divider, { orientation: "left", plain: true }, "CRUD permissions"),
       componentName !== "DetailCard" &&
         h(
@@ -302,7 +436,7 @@
     );
   }
 
-  function PropertyPanel({ schema, tables, onSchemaChange, onAddComponent }) {
+  function PropertyPanel({ schema, tables, pages, onSchemaChange, onAddComponent }) {
     const selectedNodeId = useDesignerStore((state) => state.selectedNodeId);
     const selectedMatch = SchemaUtils.findNode(schema, selectedNodeId);
     const [propsError, setPropsError] = useState("");
@@ -336,6 +470,10 @@
     const componentOptions = ComponentRegistry.listComponents().map((item) => ({
       label: item.label,
       value: item.name,
+    }));
+    const pageOptions = (pages || []).map((page) => ({
+      label: page.name,
+      value: page.id,
     }));
 
     function updateSelectedNode(updater) {
@@ -389,7 +527,7 @@
 
     return h(
       Card,
-      { title: "Properties", size: "small" },
+      { title: "Properties", size: "small", className: "schema-property-panel" },
       h(
         Form,
         { layout: "vertical" },
@@ -463,6 +601,53 @@
                 return draft;
               }),
             }),
+          ),
+        (componentName === "Button" || componentName === "Action") &&
+          h(
+            React.Fragment,
+            null,
+            h(Divider, { orientation: "left", plain: true }, "Navigation"),
+            h(
+              Form.Item,
+              { label: "Action" },
+              h(Select, {
+                value: node["x-component-props"]?.action || "none",
+                options: [
+                  { label: "None", value: "none" },
+                  { label: "Navigate to page", value: "navigate" },
+                ],
+                onChange: (value) => updateBlockProp("action", value),
+              }),
+            ),
+            h(
+              Form.Item,
+              { label: "Target page" },
+              h(Select, {
+                allowClear: true,
+                showSearch: true,
+                disabled: node["x-component-props"]?.action !== "navigate",
+                value: node["x-component-props"]?.targetPageId ?? undefined,
+                options: pageOptions,
+                onChange: (value) => updateBlockProp("targetPageId", value ?? null),
+              }),
+            ),
+            h(
+              Form.Item,
+              { label: "Query params JSON" },
+              h(Input.TextArea, {
+                rows: 3,
+                disabled: node["x-component-props"]?.action !== "navigate",
+                value: JSON.stringify(node["x-component-props"]?.navigationParams || {}, null, 2),
+                onChange: (event) => {
+                  try {
+                    updateBlockProp("navigationParams", parseJsonObject(event.target.value));
+                    setPropsError("");
+                  } catch (error) {
+                    setPropsError(error.message);
+                  }
+                },
+              }),
+            ),
           ),
         !isBlock &&
           h(Divider, { orientation: "left", plain: true }, "Visibility"),
@@ -586,6 +771,7 @@
           node,
           componentName,
           tables,
+          pages,
           updateBlockProp,
           onFormBlockTableChange: handleFormBlockTableChange,
           onFormBlockColumnsChange: handleFormBlockColumnsChange,

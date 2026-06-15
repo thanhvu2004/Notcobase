@@ -70,7 +70,7 @@
 
   [
     ["Container", "div", { category: "Layout", container: true }],
-    ["Button", Button, { category: "Actions" }],
+    ["Button", Button, { category: "Actions", defaultProps: { action: "none", targetPageId: null, navigationParams: {} } }],
     ["Checkbox", Checkbox, { category: "Fields", field: true }],
     ["DatePicker", DatePicker, { category: "Fields", field: true }],
     ["DetailCard", antd.Card, { label: "Detail Card", category: "Data", container: true, defaultProps: { title: "Record details", bordered: true, tableId: null, recordIdParam: "id", allowEdit: true, allowDelete: true } }],
@@ -86,7 +86,7 @@
     ["Select", Select, { category: "Fields", field: true }],
     ["Space", Space, { category: "Layout", container: true }],
     ["Switch", Switch, { category: "Fields", field: true }],
-    ["TableBlock", antd.Table, { label: "Table Block", category: "Data", defaultProps: { title: "Records", tableId: null, allowCreate: true, allowEdit: true, allowDelete: true, pageSize: 10, columns: [] } }],
+    ["TableBlock", antd.Table, { label: "Table Block", category: "Data", defaultProps: { title: "Records", tableId: null, allowCreate: true, allowEdit: true, allowDelete: true, pageSize: 10, columns: [], createAction: "modal", editAction: "modal", rowClickAction: "none" } }],
     ["Tabs", Tabs, { category: "Layout", container: true }],
     ["Text", Typography.Text, { category: "Typography" }],
     ["Title", Typography.Title, { category: "Typography" }],

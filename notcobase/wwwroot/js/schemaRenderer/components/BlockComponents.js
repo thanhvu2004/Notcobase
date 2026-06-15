@@ -596,8 +596,10 @@
     const config = BlockUtils.getBlockConfig(schema);
     const tableId = config.tableId;
     const recordId = BlockUtils.resolveRecordId(config, context.runtimeContext);
-    const mode = config.mode || "auto";
-    const isEdit = mode === "edit" || (mode === "auto" && Boolean(recordId));
+    const urlMode = BlockUtils.getQueryParam("mode");
+    const mode = urlMode || context.runtimeContext?.mode || config.mode || "auto";
+    const isView = mode === "view";
+    const isEdit = !isView && (mode === "edit" || (mode === "auto" && Boolean(recordId)));
     const [form] = Form.useForm();
     const [, forceVisibilityRefresh] = useState(0);
     const [, forceGroupRefresh] = useState(0);
@@ -672,7 +674,7 @@
     }, [formGroup, tableId, recordId, tableDetails, mode, isEdit, config.allowCreate, config.resetAfterCreate]);
 
     useEffect(() => {
-      if (designer || !tableId || !recordId || !isEdit) {
+      if (designer || !tableId || !recordId || (!isEdit && !isView)) {
         return;
       }
 
@@ -718,7 +720,7 @@
       return () => {
         cancelled = true;
       };
-    }, [designer, tableId, recordId, isEdit, schema, form, formGroup, formGroupKey]);
+    }, [designer, tableId, recordId, isEdit, isView, schema, form, formGroup, formGroupKey]);
 
     function buildPayload(values) {
       return BlockUtils.normalizePayloadToTableColumns(
@@ -800,7 +802,7 @@
       designer && h(BlockStatusBanner, {
         type: "info",
         message: "FormBlock",
-        extra: tableId ? `Table #${tableId} · ${isEdit ? "Edit mode" : "Create mode"}${formGroupKey ? ` · Group ${formGroupKey}` : ""}` : "Configure a data source table in properties.",
+        extra: tableId ? `Table #${tableId} · ${isView ? "View mode" : isEdit ? "Edit mode" : "Create mode"}${formGroupKey ? ` · Group ${formGroupKey}` : ""}` : "Configure a data source table in properties.",
       }),
       !designer && !tableId && h(BlockStatusBanner, { type: "warning", message: "Select a data source table for this block." }),
       error && h(BlockStatusBanner, { type: "error", message: error }),
@@ -813,6 +815,7 @@
             form,
             layout: config.layout || props.layout || "vertical",
             onFinish: handleSubmit,
+            disabled: isView,
             // disabled: designer,
             onValuesChange: (_, allValues) => {
               const mergedValues = {
@@ -825,7 +828,7 @@
             },
           },
           children,
-          !designer && tableId && showSubmit && h(
+          !designer && tableId && !isView && showSubmit && h(
             Form.Item,
             null,
             h(
@@ -1034,12 +1037,47 @@
     }, [designer, tableId, pageSize]);
 
     function openCreate() {
+      if (config.createAction === "navigate") {
+        const navigated = BlockUtils.navigate({
+          targetPageId: config.createTargetPageId,
+          targetUrl: config.createTargetUrl,
+          navigationParams: {
+            tableId,
+            mode: "create",
+            ...(config.createNavigationParams || {}),
+          },
+        }, { tableId, mode: "create" });
+        if (!navigated) {
+          message.warning("Select a create target page first");
+        }
+        return;
+      }
+
       setEditingRecord(null);
       form.resetFields();
       setModalOpen(true);
     }
 
     function openEdit(record) {
+      if (config.editAction === "navigate") {
+        const recordId = record?.__recordId || record?.id;
+        const navigated = BlockUtils.navigate({
+          targetPageId: config.editTargetPageId,
+          targetUrl: config.editTargetUrl,
+          navigationParams: {
+            id: recordId,
+            recordId,
+            tableId,
+            mode: "edit",
+            ...(config.editNavigationParams || {}),
+          },
+        }, { ...record, id: recordId, recordId, tableId, mode: "edit" });
+        if (!navigated) {
+          message.warning("Select an edit target page first");
+        }
+        return;
+      }
+
       setEditingRecord(record);
       const values = {};
       formFields.forEach((field) => {
@@ -1047,6 +1085,28 @@
       });
       form.setFieldsValue(values);
       setModalOpen(true);
+    }
+
+    function openRecord(record) {
+      if (config.rowClickAction !== "navigate") {
+        return;
+      }
+
+      const recordId = record?.__recordId || record?.id;
+      const navigated = BlockUtils.navigate({
+        targetPageId: config.rowTargetPageId,
+        targetUrl: config.rowTargetUrl,
+        navigationParams: {
+          id: recordId,
+          recordId,
+          tableId,
+          mode: config.rowMode || "view",
+          ...(config.rowNavigationParams || {}),
+        },
+      }, { ...record, id: recordId, recordId, tableId, mode: config.rowMode || "view" });
+      if (!navigated) {
+        message.warning("Select a row target page first");
+      }
     }
 
     async function handleDelete(recordId) {
@@ -1409,6 +1469,15 @@
           columns,
           dataSource: displayDataSource,
           pagination: { pageSize },
+          onRow: (record) => ({
+            onClick: (event) => {
+              if (event.target.closest?.("button,a,input,select,textarea,.ant-dropdown,.records-column-menu-toggle")) {
+                return;
+              }
+              openRecord(record);
+            },
+            ...(config.rowClickAction === "navigate" ? { style: { cursor: "pointer" } } : {}),
+          }),
         }),
         h(
           Modal,

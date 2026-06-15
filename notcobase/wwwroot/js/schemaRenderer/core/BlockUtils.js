@@ -10,6 +10,75 @@
     return new URLSearchParams(window.location.search).get(name);
   }
 
+  function resolveNavigationValue(value, data = {}) {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const exactMatch = value.match(/^\{([^}]+)\}$/);
+    if (exactMatch) {
+      return data[exactMatch[1]] ?? "";
+    }
+
+    return value.replace(/\{([^}]+)\}/g, (_, key) => data[key] ?? "");
+  }
+
+  function normalizeNavigationParams(params) {
+    if (!params) {
+      return {};
+    }
+
+    if (typeof params === "string") {
+      try {
+        const parsed = JSON.parse(params);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    return typeof params === "object" && !Array.isArray(params) ? params : {};
+  }
+
+  function buildNavigationUrl(config = {}, data = {}) {
+    const targetUrl = String(config.targetUrl || "").trim();
+    const targetPageId = config.targetPageId ?? config.navigatePageId;
+    const baseUrl = targetUrl || (targetPageId ? "/SchemaRenderer" : "");
+
+    if (!baseUrl) {
+      return "";
+    }
+
+    const url = new URL(baseUrl, window.location.origin);
+    if (!targetUrl && targetPageId) {
+      url.searchParams.set("pageId", targetPageId);
+    }
+
+    const params = {
+      ...normalizeNavigationParams(config.params),
+      ...normalizeNavigationParams(config.navigationParams),
+    };
+
+    Object.entries(params).forEach(([key, value]) => {
+      const resolved = resolveNavigationValue(value, data);
+      if (resolved !== undefined && resolved !== null && resolved !== "") {
+        url.searchParams.set(key, resolved);
+      }
+    });
+
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function navigate(config = {}, data = {}) {
+    const url = buildNavigationUrl(config, data);
+    if (!url) {
+      return false;
+    }
+
+    window.location.href = url;
+    return true;
+  }
+
   function resolveRecordId(blockProps, runtimeContext) {
     const props = blockProps || {};
 
@@ -123,6 +192,26 @@
     return match ? match[1] : undefined;
   }
 
+  function normalizeVisibilityValue(value) {
+    if (value == null) {
+      return "";
+    }
+
+    if (typeof value === "boolean") {
+      return value ? "true" : "false";
+    }
+
+    return String(value);
+  }
+
+  function visibilityValuesEqual(left, right) {
+    if (left === right) {
+      return true;
+    }
+
+    return normalizeVisibilityValue(left) === normalizeVisibilityValue(right);
+  }
+
   function addFieldValueAliases(schema, values) {
     const aliasedValues = { ...(values || {}) };
 
@@ -140,10 +229,9 @@
 
       const sourceAlias = aliases.find((alias) => Object.prototype.hasOwnProperty.call(aliasedValues, alias));
       if (sourceAlias) {
+        const sourceValue = aliasedValues[sourceAlias];
         aliases.forEach((alias) => {
-          if (!Object.prototype.hasOwnProperty.call(aliasedValues, alias)) {
-            aliasedValues[alias] = aliasedValues[sourceAlias];
-          }
+          aliasedValues[alias] = sourceValue;
         });
       }
 
@@ -165,12 +253,12 @@
 
     switch (rule.operator || "=") {
       case "=":
-        return currentValue === rule.value;
+        return visibilityValuesEqual(currentValue, rule.value);
       case "!=":
-        return currentValue !== rule.value;
+        return !visibilityValuesEqual(currentValue, rule.value);
       case "contains":
         return Array.isArray(currentValue)
-          ? currentValue.includes(rule.value)
+          ? currentValue.some((item) => visibilityValuesEqual(item, rule.value))
           : String(currentValue || "").includes(String(rule.value));
       default:
         return true;
@@ -491,7 +579,9 @@
     getBlockConfig,
     getFieldName,
     getQueryParam,
+    buildNavigationUrl,
     mapRecordToFormValues,
+    navigate,
     normalizePayloadToTableColumns,
     resolveFormValue,
     resolveRecordId,

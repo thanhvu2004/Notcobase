@@ -3,6 +3,7 @@
   const { useEffect, useMemo, useState } = React;
   const { App, Button, Card, ConfigProvider, Input, Select, Space, Spin, Typography, message, theme } = antd;
   const {
+    BlockUtils,
     DesignerStore,
     PropertyPanel,
     SchemaPagesApi,
@@ -87,8 +88,11 @@
         const result = await SchemaPagesApi.list();
         setPages(result);
 
+        const pageIdFromUrl = Number(BlockUtils?.getQueryParam?.("pageId"));
+        const initialPage = result.find((page) => page.id === pageIdFromUrl) || result[0];
+
         if (result.length) {
-          await loadPage(result[0].id);
+          await loadPage(initialPage.id);
         } else {
           await createInitialPage();
         }
@@ -303,6 +307,7 @@
                 mode,
                 runtimeContext: {
                   recordId: runtimeRecordId ? Number(runtimeRecordId) : null,
+                  mode: BlockUtils.getQueryParam("mode"),
                 },
                 onMoveNode: moveNode,
                 onDeleteNode: deleteNode,
@@ -329,6 +334,7 @@
             mode === "designer" && h(PropertyPanel, {
               schema,
               tables,
+              pages,
               onSchemaChange: handleSchemaChange,
               onAddComponent: addComponent,
             }),

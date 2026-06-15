@@ -18,7 +18,6 @@ public class MetadataSeeder
         await SeedComponentDefinitionsAsync();
         await SeedBlockTemplatesAsync();
         await SeedLayoutTemplatesAsync();
-        await SeedStarterPagesAsync();
     }
 
     private async Task SeedComponentDefinitionsAsync()
@@ -74,30 +73,6 @@ public class MetadataSeeder
                 Name = seed.Name,
                 Type = seed.Type,
                 SchemaJson = seed.SchemaJson.Trim(),
-            });
-        }
-
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedStarterPagesAsync()
-    {
-        foreach (var seed in MetadataSeedData.StarterPages)
-        {
-            var exists = await _context.LowCodePages
-                .AnyAsync(p => p.Slug == seed.Slug);
-
-            if (exists)
-            {
-                continue;
-            }
-
-            _context.LowCodePages.Add(new LowCodePage
-            {
-                Name = seed.Name,
-                Slug = seed.Slug,
-                SchemaJson = seed.SchemaJson.Trim(),
-                IsPublished = seed.IsPublished,
             });
         }
 

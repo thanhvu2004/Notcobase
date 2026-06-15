@@ -513,9 +513,9 @@ body {
   }
 }
 .schema-property-panel {
-  height: 90vh;
+  height: 95vh;
   position: sticky;
-  top: 5vh;
+  top: 2.5vh;
   overflow: scroll;
 }
 /* Shared reference field picker */

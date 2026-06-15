@@ -12,8 +12,6 @@ public static class MetadataSeedData
 
     public sealed record BlockTemplateSeed(string Name, string Type, string SchemaJson);
 
-    public sealed record StarterPageSeed(string Name, string Slug, string SchemaJson, bool IsPublished);
-
     public static IReadOnlyList<ComponentSeed> ComponentDefinitions { get; } = new[]
     {
         Component("Input", "Fields", "form-outlined", canHaveChildren: false,

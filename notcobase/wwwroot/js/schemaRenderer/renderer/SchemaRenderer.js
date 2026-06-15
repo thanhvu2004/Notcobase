@@ -196,8 +196,38 @@
 
     if (componentName === "Button" || componentName === "Action") {
       const buttonProps = { ...props };
+      const navigationConfig = {
+        action: buttonProps.action,
+        targetPageId: buttonProps.targetPageId,
+        targetUrl: buttonProps.targetUrl,
+        navigatePageId: buttonProps.navigatePageId,
+        params: buttonProps.params,
+        navigationParams: buttonProps.navigationParams,
+      };
+      delete buttonProps.action;
+      delete buttonProps.targetPageId;
+      delete buttonProps.targetUrl;
+      delete buttonProps.navigatePageId;
+      delete buttonProps.params;
+      delete buttonProps.navigationParams;
       if (context.insideFormBlock && buttonProps.htmlType === "submit") {
         buttonProps.htmlType = "button";
+      }
+      if (navigationConfig.action === "navigate") {
+        const originalOnClick = buttonProps.onClick;
+        buttonProps.onClick = (event) => {
+          originalOnClick?.(event);
+          if (event?.defaultPrevented || context.mode === "designer") {
+            return;
+          }
+          const navigated = BlockUtils.navigate(navigationConfig, {
+            ...(context.runtimeContext || {}),
+            ...(context.runtimeFormValues || {}),
+          });
+          if (!navigated) {
+            antd.message?.warning?.("Select a target page first");
+          }
+        };
       }
       return h(Component, buttonProps, buttonProps.children || schema.title || "Action");
     }
