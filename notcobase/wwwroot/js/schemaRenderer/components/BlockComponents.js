@@ -52,11 +52,16 @@
 
     switch ((field.fieldType || "text").toLowerCase()) {
       case "number":
+      case "finance":
         return h(InputNumber, { ...common, style: { width: "100%" } });
+      case "longtext":
+        return h(Input.TextArea, { ...common, rows: 3 });
       case "boolean":
         return h(Switch, null);
       case "date":
         return h(Input, { ...common, type: "date" });
+      case "url":
+        return h(Input, { ...common, type: "url" });
       case "select":
         {
           const options = Array.isArray(componentProps.options)
@@ -84,13 +89,229 @@
           ...common,
           componentPropsJson: componentProps,
           pickerVariant: "table",
-          designerMode: true,
+        });
+      case "list":
+        return h(Select, {
+          ...common,
+          mode: "tags",
+          allowClear: true,
+          style: { width: "100%" },
         });
       case "checkbox":
         return h(Checkbox, null);
       default:
         return h(Input, common);
     }
+  }
+
+  function getFieldValuePropName(field) {
+    const type = String(field?.fieldType || "").toLowerCase();
+    return type === "boolean" || type === "checkbox" ? "checked" : "value";
+  }
+
+  function getRecordFormLayout(config = {}) {
+    const layout = config.formLayout || config.modalFormLayout || "vertical";
+    const columns = Number(config.formGridColumns || config.modalFormGridColumns || 2);
+    return {
+      layout,
+      columns: Number.isFinite(columns) && columns > 0 ? Math.floor(columns) : 2,
+    };
+  }
+
+  function getFormGroupKey(config, tableId) {
+    if (!config.useFormGroup) {
+      return "";
+    }
+
+    const explicitKey = String(config.formGroupKey || "").trim();
+    if (explicitKey) {
+      return explicitKey;
+    }
+
+    return tableId ? `table:${tableId}` : "";
+  }
+
+  function getFormBlockInstanceKey(schema) {
+    return schema?.id || schema?.name || `form-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function createFormGroupCoordinator(groupKey) {
+    const forms = new Map();
+    const schemas = new Map();
+    let tableId = null;
+    let recordId = null;
+    let tableDetails = null;
+    let mode = "auto";
+    let isEdit = false;
+    let allowCreate = true;
+    let resetAfterCreate = true;
+    let saving = false;
+    let values = {};
+    const listeners = new Set();
+
+    function notify() {
+      listeners.forEach((listener) => listener());
+    }
+
+    return {
+      groupKey,
+      getSnapshot() {
+        return { saving, values, tableId, recordId };
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      configure(nextConfig) {
+        tableId = nextConfig.tableId ?? tableId;
+        recordId = nextConfig.recordId ?? recordId;
+        tableDetails = nextConfig.tableDetails || tableDetails;
+        mode = nextConfig.mode || mode;
+        isEdit = Boolean(nextConfig.isEdit);
+        allowCreate = nextConfig.allowCreate !== false;
+        resetAfterCreate = nextConfig.resetAfterCreate !== false;
+        notify();
+      },
+      register(instanceKey, form, schema) {
+        forms.set(instanceKey, form);
+        schemas.set(instanceKey, schema);
+        form.setFieldsValue(values);
+        return () => {
+          forms.delete(instanceKey);
+          schemas.delete(instanceKey);
+        };
+      },
+      setValues(nextValues, sourceForm) {
+        values = BlockUtils.addFieldValueAliases(schemas.values().next().value || {}, {
+          ...values,
+          ...(nextValues || {}),
+        });
+        forms.forEach((form) => {
+          if (form !== sourceForm) {
+            form.setFieldsValue(values);
+          }
+        });
+        notify();
+      },
+      loadRecord(record, sourceSchema) {
+        const mappedValues = {};
+        schemas.forEach((schema) => {
+          Object.assign(mappedValues, BlockUtils.mapRecordToFormValues(schema, record));
+        });
+        if (!Object.keys(mappedValues).length && sourceSchema) {
+          Object.assign(mappedValues, BlockUtils.mapRecordToFormValues(sourceSchema, record));
+        }
+        this.setValues(mappedValues);
+      },
+      reset() {
+        values = {};
+        forms.forEach((form) => form.resetFields());
+        notify();
+      },
+      async save({ onRecordSaved }) {
+        if (!tableId) {
+          return;
+        }
+
+        saving = true;
+        notify();
+
+        try {
+          const payload = {};
+          const allValues = { ...values };
+
+          for (const [instanceKey, form] of forms.entries()) {
+            const submittedValues = await form.validateFields();
+            const schema = schemas.get(instanceKey);
+            const formValues = BlockUtils.collectBlockFormValues(schema, form, submittedValues);
+            Object.assign(allValues, formValues);
+            Object.assign(payload, BlockUtils.buildRecordDataFromSchema(schema, formValues));
+          }
+
+          values = allValues;
+          const normalizedPayload = BlockUtils.normalizePayloadToTableColumns(payload, tableDetails);
+
+          if (isEdit && recordId) {
+            await RecordsApi.update(tableId, recordId, normalizedPayload);
+            message.success("Record updated");
+            onRecordSaved?.({ tableId, recordId, mode: "edit", formGroupKey: groupKey });
+            return;
+          }
+
+          if (!allowCreate) {
+            message.warning("Create is disabled for this form group");
+            return;
+          }
+
+          const created = await RecordsApi.create(tableId, normalizedPayload);
+          recordId = created.id;
+          message.success("Record created");
+          onRecordSaved?.({ tableId, recordId: created.id, mode: "create", formGroupKey: groupKey });
+
+          if (resetAfterCreate) {
+            this.reset();
+          }
+        } finally {
+          saving = false;
+          notify();
+        }
+      },
+    };
+  }
+
+  function getFormGroupCoordinator(context, groupKey) {
+    if (!groupKey) {
+      return null;
+    }
+
+    context.formGroups = context.formGroups || new Map();
+    if (!context.formGroups.has(groupKey)) {
+      context.formGroups.set(groupKey, createFormGroupCoordinator(groupKey));
+    }
+
+    return context.formGroups.get(groupKey);
+  }
+
+  function RecordFormRenderer({ form, fields, config }) {
+    const { layout, columns } = getRecordFormLayout(config);
+    const useGrid = layout === "grid";
+    const formLayout = useGrid ? "vertical" : layout;
+    const fieldItems = (fields || []).map((field) =>
+      h(
+        Form.Item,
+        {
+          key: field.name,
+          name: field.name,
+          label: field.label,
+          rules: field.required ? [{ required: true, message: `${field.label} is required` }] : [],
+          valuePropName: getFieldValuePropName(field),
+        },
+        renderFieldInput(field),
+      ),
+    );
+
+    if (!fieldItems.length) {
+      return h(Typography.Text, { type: "secondary" }, "No columns configured for this table.");
+    }
+
+    return h(
+      Form,
+      { form, layout: formLayout },
+      useGrid
+        ? h(
+            "div",
+            {
+              className: "record-form-grid",
+              style: {
+                display: "grid",
+                gap: "0 16px",
+                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              },
+            },
+            fieldItems,
+          )
+        : fieldItems,
+    );
   }
 
   function getBlockColumnKey(column) {
@@ -378,11 +599,19 @@
     const mode = config.mode || "auto";
     const isEdit = mode === "edit" || (mode === "auto" && Boolean(recordId));
     const [form] = Form.useForm();
+    const [, forceVisibilityRefresh] = useState(0);
+    const [, forceGroupRefresh] = useState(0);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
     const [tableDetails, setTableDetails] = useState(null);
     const designer = isDesignerMode(context);
+    const formGroupKey = getFormGroupKey(config, tableId);
+    const formGroup = designer ? null : getFormGroupCoordinator(context, formGroupKey);
+    const formInstanceKey = useMemo(() => getFormBlockInstanceKey(schema), [schema]);
+    const groupSnapshot = formGroup?.getSnapshot() || {};
+    const showSubmit = !formGroup || config.showGroupSubmit !== false;
+    const buttonLoading = formGroup ? Boolean(groupSnapshot.saving) : submitting;
 
     useEffect(() => {
       if (!tableId || designer) {
@@ -409,8 +638,52 @@
     }, [tableId, designer]);
 
     useEffect(() => {
+      if (!formGroup) {
+        return;
+      }
+
+      return formGroup.register(formInstanceKey, form, schema);
+    }, [formGroup, formInstanceKey, form, schema]);
+
+    useEffect(() => {
+      if (!formGroup) {
+        return;
+      }
+
+      return formGroup.subscribe(() => {
+        forceGroupRefresh((value) => value + 1);
+      });
+    }, [formGroup]);
+
+    useEffect(() => {
+      if (!formGroup) {
+        return;
+      }
+
+      formGroup.configure({
+        tableId,
+        recordId,
+        tableDetails,
+        mode,
+        isEdit,
+        allowCreate: config.allowCreate,
+        resetAfterCreate: config.resetAfterCreate,
+      });
+    }, [formGroup, tableId, recordId, tableDetails, mode, isEdit, config.allowCreate, config.resetAfterCreate]);
+
+    useEffect(() => {
       if (designer || !tableId || !recordId || !isEdit) {
         return;
+      }
+
+      const loadKey = `${formGroupKey || "single"}:${tableId}:${recordId}`;
+      context.loadedFormGroupRecords = context.loadedFormGroupRecords || new Set();
+      if (formGroup && context.loadedFormGroupRecords.has(loadKey)) {
+        return;
+      }
+
+      if (formGroup) {
+        context.loadedFormGroupRecords.add(loadKey);
       }
 
       let cancelled = false;
@@ -421,7 +694,14 @@
           setError("");
           const record = await RecordsApi.get(tableId, recordId);
           if (!cancelled) {
-            form.setFieldsValue(BlockUtils.mapRecordToFormValues(schema, record));
+            if (formGroup) {
+              formGroup.loadRecord(record, schema);
+              context.refreshVisibility?.(formGroup.getSnapshot().values);
+            } else {
+              const mappedValues = BlockUtils.mapRecordToFormValues(schema, record);
+              form.setFieldsValue(mappedValues);
+              context.refreshVisibility?.(mappedValues);
+            }
           }
         } catch (loadError) {
           if (!cancelled) {
@@ -438,7 +718,7 @@
       return () => {
         cancelled = true;
       };
-    }, [designer, tableId, recordId, isEdit, schema, form]);
+    }, [designer, tableId, recordId, isEdit, schema, form, formGroup, formGroupKey]);
 
     function buildPayload(values) {
       return BlockUtils.normalizePayloadToTableColumns(
@@ -453,6 +733,12 @@
       }
 
       try {
+        if (formGroup) {
+          await formGroup.save({ onRecordSaved: context.onRecordSaved });
+          context.refreshVisibility?.(formGroup.getSnapshot().values);
+          return;
+        }
+
         setSubmitting(true);
         const values = BlockUtils.collectBlockFormValues(schema, form, submittedValues);
         const payload = buildPayload(values);
@@ -477,9 +763,14 @@
           form.resetFields();
         }
       } catch (submitError) {
+        if (submitError?.errorFields) {
+          return;
+        }
         message.error(submitError.message || "Failed to save record");
       } finally {
-        setSubmitting(false);
+        if (!formGroup) {
+          setSubmitting(false);
+        }
       }
     }
 
@@ -492,6 +783,7 @@
         await RecordsApi.remove(tableId, recordId);
         message.success("Record deleted");
         form.resetFields();
+        formGroup?.reset();
         context.onRecordDeleted?.({ tableId, recordId });
       } catch (deleteError) {
         message.error(deleteError.message || "Failed to delete record");
@@ -508,7 +800,7 @@
       designer && h(BlockStatusBanner, {
         type: "info",
         message: "FormBlock",
-        extra: tableId ? `Table #${tableId} · ${isEdit ? "Edit mode" : "Create mode"}` : "Configure a data source table in properties.",
+        extra: tableId ? `Table #${tableId} · ${isEdit ? "Edit mode" : "Create mode"}${formGroupKey ? ` · Group ${formGroupKey}` : ""}` : "Configure a data source table in properties.",
       }),
       !designer && !tableId && h(BlockStatusBanner, { type: "warning", message: "Select a data source table for this block." }),
       error && h(BlockStatusBanner, { type: "error", message: error }),
@@ -521,19 +813,19 @@
             form,
             layout: config.layout || props.layout || "vertical",
             onFinish: handleSubmit,
-            disabled: designer,
+            // disabled: designer,
             onValuesChange: (_, allValues) => {
               const mergedValues = {
                 ...(context.runtimeFormValues || {}),
                 ...allValues,
               };
-              context.runtimeFormValues = mergedValues;
+              formGroup?.setValues(allValues, form);
               context.refreshVisibility?.(mergedValues);
               forceVisibilityRefresh((value) => value + 1);
             },
           },
           children,
-          !designer && tableId && h(
+          !designer && tableId && showSubmit && h(
             Form.Item,
             null,
             h(
@@ -541,8 +833,8 @@
               null,
               h(Button, {
                 type: "primary",
-                loading: submitting,
-                onClick: () => form.submit(),
+                loading: buttonLoading,
+                onClick: () => formGroup ? handleSubmit({}) : form.submit(),
               }, config.submitLabel || (isEdit ? "Update" : "Create")),
               config.allowDelete && isEdit && recordId &&
                 h(

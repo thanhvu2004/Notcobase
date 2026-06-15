@@ -75,7 +75,7 @@
     ["DatePicker", DatePicker, { category: "Fields", field: true }],
     ["DetailCard", antd.Card, { label: "Detail Card", category: "Data", container: true, defaultProps: { title: "Record details", bordered: true, tableId: null, recordIdParam: "id", allowEdit: true, allowDelete: true } }],
     ["Divider", Divider, { category: "Layout" }],
-    ["FormBlock", antd.Form, { label: "Form Block", category: "Data", container: true, defaultProps: { title: "Form block", layout: "vertical", tableId: null, recordIdParam: "id", mode: "auto", allowCreate: true, allowDelete: false, submitLabel: "Save", formColumns: [] } }],
+    ["FormBlock", antd.Form, { label: "Form Block", category: "Data", container: true, defaultProps: { title: "Form block", layout: "vertical", tableId: null, recordIdParam: "id", mode: "auto", allowCreate: true, allowDelete: false, submitLabel: "Save", formColumns: [], useFormGroup: false, formGroupKey: "", showGroupSubmit: true } }],
     ["Grid.Col", Col, { label: "Column", category: "Layout", container: true }],
     ["Grid.Row", Row, { label: "Row", category: "Layout", container: true, defaultProps: { gutter: 16 } }],
     ["Input", Input, { category: "Fields", field: true }],

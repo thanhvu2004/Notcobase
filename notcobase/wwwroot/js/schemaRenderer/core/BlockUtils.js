@@ -296,22 +296,49 @@
     })?.[0];
   }
 
+  function collectFormBlockFieldNodes(node, results = []) {
+    SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
+      const fieldName = childSchema?.["x-field"] || key;
+
+      if (isDataFieldNode(childSchema) && childSchema?.["x-field"]) {
+        results.push({
+          key,
+          fieldName,
+          node: childSchema,
+          parentProperties: node.properties,
+        });
+      }
+
+      if (childSchema?.properties) {
+        collectFormBlockFieldNodes(childSchema, results);
+      }
+    });
+
+    return results;
+  }
+
+  function removeUnselectedFieldsRecursively(node, selectedSet, tableColumnNames) {
+    Object.keys(node?.properties || {}).forEach((key) => {
+      const child = node.properties[key];
+      const fieldName = (child?.["x-field"] || key).toLowerCase();
+
+      if (child?.properties) {
+        removeUnselectedFieldsRecursively(child, selectedSet, tableColumnNames);
+      }
+
+      if (tableColumnNames.has(fieldName) && !selectedSet.has(fieldName)) {
+        delete node.properties[key];
+      }
+    });
+  }
+
   function getFormBlockSelectedColumns(node) {
     const config = getBlockConfig(node);
     if (Array.isArray(config.formColumns)) {
       return config.formColumns;
     }
 
-    const selected = [];
-    SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
-      if (!isDataFieldNode(childSchema)) {
-        return;
-      }
-
-      selected.push(childSchema["x-field"] || key);
-    });
-
-    return selected;
+    return collectFormBlockFieldNodes(node).map((item) => item.fieldName);
   }
 
   function createPropertySchemaFromColumn(column, index) {
@@ -364,13 +391,11 @@
     const selectedSet = new Set((selectedColumnNames || []).map((name) => name.toLowerCase()));
     const tableColumnNames = new Set((tableColumns || []).map((column) => column.name.toLowerCase()));
 
-    Object.keys(draft.properties).forEach((key) => {
-      const child = draft.properties[key];
-      const fieldName = (child?.["x-field"] || key).toLowerCase();
-      if (tableColumnNames.has(fieldName) && !selectedSet.has(fieldName)) {
-        delete draft.properties[key];
-      }
-    });
+    removeUnselectedFieldsRecursively(
+      draft,
+      selectedSet,
+      tableColumnNames,
+    );
 
     const requiredKeys = [];
 
@@ -380,22 +405,41 @@
         return;
       }
 
-      const { propertyKey, schema } = createPropertySchemaFromColumn(column, index);
-      const existingKey = findPropertyKeyForColumn(draft.properties, column.name);
-      let targetKey = existingKey || propertyKey;
+      const existingField = collectFormBlockFieldNodes(draft)
+        .find((item) => item.fieldName.toLowerCase() === column.name.toLowerCase());
+
+      const existingKey = existingField?.key;
+      const existingParentProperties = existingField?.parentProperties;
+
+      if (existingField) {
+        existingParentProperties[existingKey] = {
+          ...existingParentProperties[existingKey],
+          ...createPropertySchemaFromColumn(column, index).schema,
+          id: existingParentProperties[existingKey].id,
+          "x-index": index,
+        };
+
+        if (column.isRequired) {
+          requiredKeys.push(existingKey);
+        }
+
+        return;
+      }
+
+      let targetKey = sanitizePropertyKey(column.name);
 
       if (draft.properties[targetKey] && (draft.properties[targetKey]["x-field"] || targetKey) !== column.name) {
         let suffix = 1;
-        while (draft.properties[`${propertyKey}_${suffix}`]) {
+        while (draft.properties[`${targetKey}_${suffix}`]) {
           suffix += 1;
         }
-        targetKey = `${propertyKey}_${suffix}`;
+        targetKey = `${targetKey}_${suffix}`;
       }
 
       draft.properties[targetKey] = {
         ...(existingKey ? draft.properties[existingKey] : {}),
-        ...schema,
-        id: existingKey ? draft.properties[existingKey].id : schema.id,
+        ...createPropertySchemaFromColumn(column, index).schema,
+        id: existingKey ? draft.properties[existingKey].id : createPropertySchemaFromColumn(column, index).schema.id,
         "x-index": index,
       };
 

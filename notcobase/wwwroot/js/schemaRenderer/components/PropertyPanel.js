@@ -226,6 +226,36 @@
       componentName === "FormBlock" &&
         h(
           Form.Item,
+          null,
+          h(Checkbox, {
+            checked: Boolean(config.useFormGroup),
+            onChange: (event) => updateBlockProp("useFormGroup", event.target.checked),
+          }, "Use shared form group"),
+        ),
+      componentName === "FormBlock" &&
+        h(
+          Form.Item,
+          { label: "Form group key" },
+          h(Input, {
+            value: config.formGroupKey || "",
+            placeholder: config.tableId ? `table:${config.tableId}` : "customer-profile",
+            disabled: !config.useFormGroup,
+            onChange: (event) => updateBlockProp("formGroupKey", event.target.value),
+          }),
+        ),
+      componentName === "FormBlock" &&
+        h(
+          Form.Item,
+          null,
+          h(Checkbox, {
+            checked: config.showGroupSubmit !== false,
+            disabled: !config.useFormGroup,
+            onChange: (event) => updateBlockProp("showGroupSubmit", event.target.checked),
+          }, "Show group save button"),
+        ),
+      componentName === "FormBlock" &&
+        h(
+          Form.Item,
           { label: "Submit label" },
           h(Input, {
             value: config.submitLabel || "Save",
@@ -288,7 +318,7 @@
     if (!selectedMatch) {
       return h(
         Card,
-        { title: "Properties", size: "small" },
+        { title: "Properties", size: "small", className: "schema-property-panel" },
         h(Alert, {
           type: "info",
           showIcon: true,

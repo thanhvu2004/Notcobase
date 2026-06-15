@@ -99,24 +99,6 @@ public static class MetadataSeedData
         """.Trim()),
     };
 
-    public static IReadOnlyList<StarterPageSeed> StarterPages { get; } = new StarterPageSeed[]
-    {
-        new StarterPageSeed(
-            "Customer form",
-            "customer-form",
-            """
-            {"type":"object","name":"customerForm","title":"Customer form","x-component":"Form","x-component-props":{"layout":"vertical"},"required":["name"],"properties":{"name":{"type":"string","title":"Customer name","x-component":"Input","x-index":0},"status":{"type":"string","title":"Status","x-component":"Select","enum":[{"label":"Lead","value":"lead"},{"label":"Active","value":"active"}],"x-index":1},"actions":{"type":"void","x-component":"Space","x-index":2,"properties":{"submit":{"type":"void","title":"Submit","x-component":"Button","x-component-props":{"type":"primary","htmlType":"submit"},"x-index":0}}}}}
-            """.Trim(),
-            IsPublished: true),
-        new StarterPageSeed(
-            "Records list",
-            "records-list",
-            """
-            {"type":"object","name":"recordsListPage","title":"Records","properties":{"table":{"type":"array","title":"Records","x-component":"Table","x-component-props":{"columns":[{"title":"Name","dataIndex":"name"},{"title":"Status","dataIndex":"status"}],"dataSource":[]},"x-index":0}}}
-            """.Trim(),
-            IsPublished: true),
-    };
-
     private static ComponentSeed Component(
         string componentName,
         string category,

@@ -331,7 +331,6 @@ body {
 
 .schema-designer-canvas-card .ant-card-body {
   min-height: fit-content;
-  /* max-width: 45vw; */
 }
 
 .schema-renderer-designer {
@@ -512,6 +511,12 @@ body {
   .schema-designer-canvas-card .ant-card-body {
     min-height: 420px;
   }
+}
+.schema-property-panel {
+  height: 90vh;
+  position: sticky;
+  top: 5vh;
+  overflow: scroll;
 }
 /* Shared reference field picker */
 .reference-field-trigger {

@@ -480,6 +480,8 @@
     const [form] = Form.useForm();
     const [, forceRender] = React.useState(0);
     const runtimeFormValuesRef = React.useRef({});
+    const formGroupsRef = React.useRef(new Map());
+    const loadedFormGroupRecordsRef = React.useRef(new Set());
     const refreshVisibility = (values) => {
       if (values && typeof values === "object") {
         runtimeFormValuesRef.current = values;
@@ -550,6 +552,8 @@
         rootSchema: normalizedSchema,
         rootProps,
         runtimeFormValues: runtimeFormValuesRef.current,
+        formGroups: formGroupsRef.current,
+        loadedFormGroupRecords: loadedFormGroupRecordsRef.current,
         refreshVisibility,
         mode: mode || "runtime",
         runtimeContext,
