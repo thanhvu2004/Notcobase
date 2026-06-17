@@ -527,6 +527,7 @@ function RecordsTable({ columns, records, onEditCell, onDeleteRecord }) {
                             ? h(app.ReferenceField.ReferenceDisplay, {
                                 value: record.data?.[column.name],
                                 componentPropsJson: column.componentPropsJson,
+                                parentRecordId: record.id,
                               })
                             : formatRecordValue(record.data?.[column.name], column.fieldType) || h("span", { className: "text-muted" }, "Empty"),
                         ),

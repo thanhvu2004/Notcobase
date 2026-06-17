@@ -40,6 +40,31 @@
     return typeof params === "object" && !Array.isArray(params) ? params : {};
   }
 
+  function parseComponentPropsJson(source) {
+    if (!source) {
+      return {};
+    }
+
+    if (typeof source === "object") {
+      return source;
+    }
+
+    try {
+      return JSON.parse(source);
+    } catch {
+      return {};
+    }
+  }
+
+  function isHiddenColumn(column) {
+    const props = parseComponentPropsJson(column?.componentPropsJson);
+    return props.hiddenInForms === true || props.type === "parent-link";
+  }
+
+  function getVisibleColumns(columns) {
+    return (columns || []).filter((column) => !isHiddenColumn(column));
+  }
+
   function buildNavigationUrl(config = {}, data = {}) {
     const targetUrl = String(config.targetUrl || "").trim();
     const targetPageId = config.targetPageId ?? config.navigatePageId;
@@ -128,6 +153,10 @@
   }
 
   function isDataFieldNode(childSchema) {
+    if (childSchema?.["x-hidden"] || childSchema?.["x-component-props"]?.hiddenInForms === true) {
+      return false;
+    }
+
     const componentName = SchemaUtils.inferComponent(childSchema);
     return !["Button", "Action", "Divider", "Empty", "Alert", "Text", "Title"].includes(componentName);
   }
@@ -151,6 +180,13 @@
         const value = resolveFormValue(values, key, fieldName);
 
         if (value !== undefined && value !== null) {
+          if (SchemaUtils.inferComponent(childSchema) === "Reference") {
+            payload[fieldName] = window.Notcobase.ReferenceField?.stringifyReferenceValue?.(
+              value,
+              childSchema["x-component-props"] || {},
+            ) || window.Notcobase.ReferenceField?.stringifyIds?.(value) || "[]";
+            return;
+          }
           payload[fieldName] = value;
         }
       });
@@ -316,6 +352,10 @@
           mapProperties(childSchema);
         }
 
+        if (childSchema?.["x-hidden"] || childSchema?.["x-component-props"]?.hiddenInForms === true) {
+          return;
+        }
+
         const fieldName = getFieldName(key, childSchema);
         const match = Object.entries(data).find(([columnName]) => columnName.toLowerCase() === fieldName.toLowerCase());
 
@@ -330,11 +370,20 @@
   }
 
   function buildColumnsFromTable(tableDetails, configuredColumns) {
+    const hiddenColumnNames = new Set(
+      (tableDetails?.columns || [])
+        .filter(isHiddenColumn)
+        .map((column) => String(column.name || "").toLowerCase()),
+    );
+
     if (Array.isArray(configuredColumns) && configuredColumns.length) {
-      return configuredColumns;
+      return configuredColumns.filter((column) => {
+        const columnName = String(column.dataIndex || column.key || column.title || "").toLowerCase();
+        return !hiddenColumnNames.has(columnName);
+      });
     }
 
-    return (tableDetails?.columns || []).map((column) => ({
+    return getVisibleColumns(tableDetails?.columns || []).map((column) => ({
       title: column.name,
       dataIndex: column.name,
       key: column.name,
@@ -342,7 +391,7 @@
   }
 
   function buildFormFieldsFromColumns(columns) {
-    return (columns || []).map((column) => ({
+    return getVisibleColumns(columns).map((column) => ({
       componentPropsJson: column.componentPropsJson,
       componentDefinitionId: column.componentDefinitionId,
       name: column.name,
@@ -432,7 +481,7 @@
   function createPropertySchemaFromColumn(column, index) {
     const mapping = fieldTypeToSchemaComponent(column.fieldType);
     const propertyKey = sanitizePropertyKey(column.name);
-    const componentProps = column.componentPropsJson ? (typeof column.componentPropsJson === "string" ? JSON.parse(column.componentPropsJson) : column.componentPropsJson) : {};
+    const componentProps = parseComponentPropsJson(column.componentPropsJson);
     const schema = {
       id: SchemaUtils.createNodeId(propertyKey),
       type: mapping.schemaType,
@@ -442,7 +491,7 @@
       "x-index": index,
       "x-component-props": {
         placeholder: column.name,
-        ...(String(column.fieldType || "").toLowerCase() === "reference" ? { pickerVariant: "table" } : {}),
+        ...(String(column.fieldType || "").toLowerCase() === "reference" ? { pickerVariant: "table", displayColumnId: "id" } : {}),
         ...componentProps,
       },
       name: propertyKey,
@@ -475,8 +524,11 @@
     const draft = SchemaUtils.cloneSchema(node);
     draft.properties = draft.properties || {};
     draft["x-component-props"] = draft["x-component-props"] || {};
+    const visibleTableColumns = getVisibleColumns(tableColumns);
 
-    const selectedSet = new Set((selectedColumnNames || []).map((name) => name.toLowerCase()));
+    const visibleSelectedColumnNames = (selectedColumnNames || [])
+      .filter((columnName) => visibleTableColumns.some((column) => column.name.toLowerCase() === String(columnName).toLowerCase()));
+    const selectedSet = new Set(visibleSelectedColumnNames.map((name) => name.toLowerCase()));
     const tableColumnNames = new Set((tableColumns || []).map((column) => column.name.toLowerCase()));
 
     removeUnselectedFieldsRecursively(
@@ -487,8 +539,8 @@
 
     const requiredKeys = [];
 
-    (selectedColumnNames || []).forEach((columnName, index) => {
-      const column = (tableColumns || []).find((item) => item.name.toLowerCase() === columnName.toLowerCase());
+    visibleSelectedColumnNames.forEach((columnName, index) => {
+      const column = visibleTableColumns.find((item) => item.name.toLowerCase() === columnName.toLowerCase());
       if (!column) {
         return;
       }
@@ -542,7 +594,7 @@
       delete draft.required;
     }
 
-    draft["x-component-props"].formColumns = [...selectedColumnNames];
+    draft["x-component-props"].formColumns = [...visibleSelectedColumnNames];
     SchemaUtils.normalizeIndexes(draft);
 
     return draft;
@@ -580,6 +632,7 @@
     getFieldName,
     getQueryParam,
     buildNavigationUrl,
+    getVisibleColumns,
     mapRecordToFormValues,
     navigate,
     normalizePayloadToTableColumns,

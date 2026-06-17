@@ -29,7 +29,12 @@ public class RecordsController : ControllerBase
     /// Get all records from a table
     [HttpGet]
     [Permission("records.view")]
-    public async Task<ActionResult<IEnumerable<RecordDto>>> GetRecords(int tableId, [FromQuery] int? skip = 0, [FromQuery] int? limit = 100)
+    public async Task<ActionResult<IEnumerable<RecordDto>>> GetRecords(
+        int tableId,
+        [FromQuery] int? skip = 0,
+        [FromQuery] int? limit = 100,
+        [FromQuery] string? filterField = null,
+        [FromQuery] string? filterValue = null)
     {
         // Verify table exists and physical table is created
         var table = await _context.Tables
@@ -51,10 +56,12 @@ public class RecordsController : ControllerBase
             var columnList = BuildSelectColumnList(columns, path);
             var fromClause = BuildFromClause(path);
             var lastAlias = $"t{path.Count - 1}";
+            var whereClause = BuildFilterWhereClause(columns, path, filterField, filterValue);
 
             var sql = $@"
                 SELECT {lastAlias}.Id{columnList}, {lastAlias}.CreatedAt, {lastAlias}.UpdatedAt
                 {fromClause}
+                {whereClause}
                 ORDER BY {lastAlias}.CreatedAt DESC
                 LIMIT {limitValue} OFFSET {skipValue}";
 
@@ -225,7 +232,12 @@ public class RecordsController : ControllerBase
                 }
 
                 var getRecordResult = await GetRecord(tableId, (int)recordId);
-                return CreatedAtAction(nameof(GetRecord), new { tableId, recordId }, getRecordResult.Result);
+                if (getRecordResult.Result is OkObjectResult okResult && okResult.Value is RecordDto createdRecord)
+                {
+                    return CreatedAtAction(nameof(GetRecord), new { tableId, recordId }, createdRecord);
+                }
+
+                return CreatedAtAction(nameof(GetRecord), new { tableId, recordId }, new RecordDto { Id = (int)recordId });
             }
         }
         catch (Exception ex)
@@ -402,6 +414,27 @@ public class RecordsController : ControllerBase
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildFilterWhereClause(
+        IEnumerable<Column> columns,
+        IReadOnlyList<Table> path,
+        string? filterField,
+        string? filterValue)
+    {
+        if (string.IsNullOrWhiteSpace(filterField) || string.IsNullOrWhiteSpace(filterValue))
+            return string.Empty;
+
+        var column = columns.FirstOrDefault(c => string.Equals(c.Name, filterField, StringComparison.OrdinalIgnoreCase));
+        if (column == null)
+            return string.Empty;
+
+        var tableIndex = path.ToList().FindIndex(t => t.Id == column.TableId);
+        if (tableIndex < 0)
+            return string.Empty;
+
+        var escapedValue = filterValue.Replace("'", "''");
+        return $"WHERE t{tableIndex}.[{column.Name}] = '{escapedValue}'";
     }
 
     private RecordDto ReadRecordDto(System.Data.IDataReader reader)

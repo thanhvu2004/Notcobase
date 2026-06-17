@@ -46,6 +46,21 @@
     return JSON.stringify(parseIds(value));
   }
 
+  function stringifyReferenceValue(value, config) {
+    const parsedConfig = parseProps(config);
+    if (getRelationshipMode(parsedConfig) === "related") {
+      return JSON.stringify(normalizeRelatedValue(value).ids);
+    }
+
+    return stringifyIds(value);
+  }
+
+  function getRecordId(record) {
+    const value = record?.id ?? record?.value?.id ?? record?.Value?.id;
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+  }
+
   async function request(path, options = {}) {
     if (window.Notcobase.ApiClient?.request) {
       return window.Notcobase.ApiClient.request(path, options);
@@ -76,12 +91,155 @@
   function getRecordDisplay(record, displayColumn) {
     if (!record) return "";
     if (!displayColumn) return `#${record.id}`;
+    if (displayColumn.name === "id") return `#${record.id}`;
     const value = record.data?.[displayColumn.name];
     return value == null || value === "" ? `#${record.id}` : String(value);
   }
 
+  function getDisplayColumn(table, config) {
+    if (!config.displayColumnId || config.displayColumnId === "id") {
+      return { name: "id" };
+    }
+
+    return (table?.columns || []).find((column) => Number(column.id) === Number(config.displayColumnId)) || { name: "id" };
+  }
+
+  function isHiddenColumn(column) {
+    const props = parseProps(column?.componentPropsJson);
+    return props.hiddenInForms === true || props.type === "parent-link";
+  }
+
+  function getVisibleColumns(columns) {
+    return (columns || []).filter((column) => !isHiddenColumn(column));
+  }
+
+  function getRelationshipMode(config) {
+    return config.relationshipMode === "related" ? "related" : "lookup";
+  }
+
+  function getParentRecordId(config, parentRecordId) {
+    const value = parentRecordId ?? config.parentRecordId;
+    return value == null || value === "" ? null : Number(value);
+  }
+
+  function getParentFieldName(config) {
+    return String(config.parentFieldName || config.sourceFieldName || "").trim();
+  }
+
+  function getSourceFieldName(config) {
+    return String(config.sourceFieldName || "").trim();
+  }
+
+  function normalizeRelatedValue(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return {
+        ids: parseIds(value.ids),
+        drafts: Array.isArray(value.drafts) ? value.drafts : [],
+      };
+    }
+
+    return { ids: parseIds(value), drafts: [] };
+  }
+
+  async function saveRelatedDrafts(value, config, parentRecordId) {
+    const mode = getRelationshipMode(config);
+    const targetTableId = config?.targetTableId;
+    const parentFieldName = getParentFieldName(config);
+    const resolvedParentId = getParentRecordId(config, parentRecordId);
+    const relatedValue = normalizeRelatedValue(value);
+
+    if (mode !== "related" || !targetTableId || !parentFieldName || !resolvedParentId || !relatedValue.drafts.length) {
+      return relatedValue.ids;
+    }
+
+    const createdIds = [];
+    for (const draft of relatedValue.drafts) {
+      const payload = {
+        ...(draft || {}),
+        [parentFieldName]: resolvedParentId,
+      };
+      const created = await request(`/api/tables/${targetTableId}/records`, {
+        method: "POST",
+        body: JSON.stringify({ data: payload }),
+      });
+      const createdId = getRecordId(created);
+      if (createdId) {
+        createdIds.push(createdId);
+      }
+    }
+
+    return [...relatedValue.ids, ...createdIds];
+  }
+
+  async function ensureParentLinkColumn(config) {
+    const mode = getRelationshipMode(config);
+    const targetTableId = config?.targetTableId;
+    const parentFieldName = getParentFieldName(config);
+
+    if (mode !== "related" || !targetTableId || !parentFieldName) {
+      return null;
+    }
+
+    const table = await request(`/api/tables/${targetTableId}`);
+    const existing = (table?.columns || []).find((column) => (
+      String(column.name || "").toLowerCase() === parentFieldName.toLowerCase()
+    ));
+
+    if (existing) {
+      const existingProps = parseProps(existing.componentPropsJson);
+      const nextProps = {
+        ...existingProps,
+        type: "parent-link",
+        hiddenInForms: true,
+      };
+
+      if (
+        existing.tableId === Number(targetTableId) &&
+        (
+          String(existing.fieldType || "").toLowerCase() !== "number"
+          || existing.isRequired
+          || existingProps.type !== "parent-link"
+          || existingProps.hiddenInForms !== true
+        )
+      ) {
+        await request(`/api/tables/${targetTableId}/columns/${existing.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            name: existing.name,
+            fieldType: "number",
+            isRequired: false,
+            componentPropsJson: JSON.stringify(nextProps),
+          }),
+        });
+
+        return {
+          ...existing,
+          fieldType: "number",
+          isRequired: false,
+          componentPropsJson: JSON.stringify(nextProps),
+        };
+      }
+
+      return existing;
+    }
+
+    return request(`/api/tables/${targetTableId}/columns`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: parentFieldName,
+        fieldType: "number",
+        isRequired: false,
+        componentPropsJson: JSON.stringify({
+          type: "parent-link",
+          hiddenInForms: true,
+        }),
+      }),
+    });
+  }
+
   function renderBasicFieldInput(field, value, onChange) {
     const type = String(field.fieldType || "text").toLowerCase();
+    const componentProps = parseProps(field.componentPropsJson);
     const common = {
       value: value ?? "",
       onChange: (event) => onChange(event.target.value),
@@ -99,6 +257,45 @@
       return h("textarea", { ...common, className: "form-control", rows: 3 });
     }
 
+    if (type === "select") {
+      return h(
+        "select",
+        { ...common, className: "form-control" },
+        h("option", { value: "" }, "-- Select --"),
+        (componentProps.options || []).map((option) => {
+          const optionValue = typeof option === "object" ? option.value : option;
+          const optionLabel = typeof option === "object" ? option.label : option;
+          return h("option", { key: optionValue, value: optionValue }, optionLabel);
+        }),
+      );
+    }
+
+    if (type === "reference") {
+      return h(ReferencePicker, {
+        value,
+        componentPropsJson: field.componentPropsJson,
+        pickerVariant: componentProps.relationshipMode === "related" ? "table" : undefined,
+        onChange,
+      });
+    }
+
+    if (type === "list") {
+      return h("input", {
+        className: "form-control",
+        value: Array.isArray(value) ? value.join(", ") : (value ?? ""),
+        placeholder: "Comma-separated values",
+        onChange: (event) => onChange(event.target.value.split(",").map((item) => item.trim()).filter(Boolean)),
+      });
+    }
+
+    if (type === "file") {
+      return h("input", {
+        className: "form-control",
+        type: "file",
+        onChange: (event) => onChange(event.target.files?.[0]?.name || ""),
+      });
+    }
+
     return h("input", {
       ...common,
       className: "form-control",
@@ -106,8 +303,12 @@
     });
   }
 
-  function ReferenceTablePicker({ value, onChange, config, disabled, designerMode }) {
-    const selectedIds = useMemo(() => parseIds(value), [value]);
+  function ReferenceTablePicker({ value, onChange, config, disabled, designerMode, parentRecordId }) {
+    const mode = getRelationshipMode(config);
+    const parentId = getParentRecordId(config, parentRecordId);
+    const parentFieldName = getParentFieldName(config);
+    const relatedValue = useMemo(() => normalizeRelatedValue(value), [value]);
+    const selectedIds = mode === "related" ? relatedValue.ids : parseIds(value);
     const [table, setTable] = useState(null);
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -123,7 +324,7 @@
     const Space = antd?.Space;
 
     const displayColumn = useMemo(
-      () => (table?.columns || []).find((column) => Number(column.id) === Number(config.displayColumnId)),
+      () => getDisplayColumn(table, config),
       [table, config.displayColumnId],
     );
 
@@ -135,8 +336,21 @@
     const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
     const someSelected = allIds.some((id) => selectedIds.includes(id));
 
+    function emitValue(ids, drafts = relatedValue.drafts) {
+      const nextIds = parseIds(ids);
+      if (mode === "related") {
+        onChange?.({
+          ids: nextIds,
+          drafts,
+        });
+        return;
+      }
+
+      onChange?.(nextIds);
+    }
+
     function toggleAll(checked) {
-      onChange?.(checked ? allIds : []);
+      emitValue(checked ? allIds : []);
     }
 
     async function loadData() {
@@ -150,13 +364,19 @@
         setRecords([]);
         return;
       }
+      if (mode === "related" && (!parentFieldName || !parentId)) {
+        const tableDetails = await request(`/api/tables/${config.targetTableId}`);
+        setTable(tableDetails);
+        setRecords([]);
+        return;
+      }
 
       try {
         setLoading(true);
         setError("");
         const [tableDetails, recordList] = await Promise.all([
           request(`/api/tables/${config.targetTableId}`),
-          request(`/api/tables/${config.targetTableId}/records`),
+          request(`/api/tables/${config.targetTableId}/records${mode === "related" && parentFieldName && parentId ? `?filterField=${encodeURIComponent(parentFieldName)}&filterValue=${encodeURIComponent(parentId)}` : ""}`),
         ]);
         setTable(tableDetails);
         setRecords(recordList);
@@ -175,13 +395,13 @@
       }
 
       loadData();
-    }, [config.targetTableId, designerMode]);
+    }, [config.targetTableId, designerMode, mode, parentFieldName, parentId]);
 
     function toggleId(id, checked) {
       const next = new Set(selectedIds);
       if (checked) next.add(Number(id));
       else next.delete(Number(id));
-      onChange?.(Array.from(next));
+      emitValue(Array.from(next));
     }
 
     function openCreate() {
@@ -198,19 +418,49 @@
 
     async function saveRecord() {
       if (!config.targetTableId) return;
+      if (mode === "related" && !parentFieldName) {
+        setError("Configure a parent link field before creating related records.");
+        return;
+      }
+
+      if (mode === "related" && !parentId) {
+        emitValue(selectedIds, [...relatedValue.drafts, draft]);
+        setDraft({});
+        setModalOpen(false);
+        return;
+      }
 
       try {
         setLoading(true);
+        const payload = mode === "related" && parentFieldName && parentId
+          ? { ...draft, [parentFieldName]: parentId }
+          : draft;
         if (editingRecord?.id) {
           await request(`/api/tables/${config.targetTableId}/records/${editingRecord.id}`, {
             method: "PUT",
-            body: JSON.stringify({ data: draft }),
+            body: JSON.stringify({ data: payload }),
           });
         } else {
-          await request(`/api/tables/${config.targetTableId}/records`, {
+          const created = await request(`/api/tables/${config.targetTableId}/records`, {
             method: "POST",
-            body: JSON.stringify({ data: draft }),
+            body: JSON.stringify({ data: payload }),
           });
+          const createdId = getRecordId(created);
+          if (mode === "related" && createdId) {
+            const nextIds = [...selectedIds, createdId];
+            emitValue(nextIds);
+            const sourceFieldName = getSourceFieldName(config);
+            if (config.parentTableId && parentId && sourceFieldName) {
+              await request(`/api/tables/${config.parentTableId}/records/${parentId}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                  data: {
+                    [sourceFieldName]: stringifyReferenceValue({ ids: nextIds, drafts: [] }, config),
+                  },
+                }),
+              });
+            }
+          }
         }
         setModalOpen(false);
         await loadData();
@@ -224,9 +474,10 @@
     const rows = designerMode
       ? []
       : records.map((record) => ({ ...record.data, id: record.id, __record: record }));
+    const visibleTableColumns = getVisibleColumns(table?.columns || []);
     const dataColumns = designerMode
       ? []
-      : (table?.columns || []).map((column) => ({
+      : visibleTableColumns.map((column) => ({
         title: column.name,
         dataIndex: column.name,
         key: column.name,
@@ -272,7 +523,7 @@
       return h(
         "div",
         { className: "reference-table-picker text-muted" },
-        "Reference table field (designer mode)",
+        mode === "related" ? "Related records field (designer mode)" : "Reference table field (designer mode)",
       );
     }
     if (!config.targetTableId) {
@@ -337,11 +588,11 @@
     const modalBody = h(
       "div",
       null,
-      (table?.columns || []).map((column) =>
+      visibleTableColumns.map((column) =>
         h(
           "div",
           { key: column.id || column.name, className: "mb-3" },
-          h("label", { className: "form-label" }, column.name),
+          h("label", { className: "form-label" }, column.name, column.isRequired && h("span", { className: "text-danger" }, " *")),
           renderBasicFieldInput(column, draft[column.name], (nextValue) => setDraft((current) => ({ ...current, [column.name]: nextValue }))),
         ),
       ),
@@ -351,10 +602,11 @@
       "div",
       { className: "reference-table-picker" },
       error && h("div", { className: "alert alert-danger py-2" }, error),
+      mode === "related" && !parentId && h("div", { className: "text-muted small mb-2" }, `${relatedValue.drafts.length} new related record${relatedValue.drafts.length === 1 ? "" : "s"} will be created after the parent record is saved.`),
       h(
         "div",
         { className: "reference-table-picker-toolbar" },
-        h("span", { className: "text-muted small" }, `${selectedIds.length} selected`),
+        h("span", { className: "text-muted small" }, mode === "related" ? `${records.length + relatedValue.drafts.length} related` : `${selectedIds.length} selected`),
         Button
           ? h(Button, { size: "small", type: "primary", disabled, onClick: openCreate }, "Add record")
           : h("button", { type: "button", className: "btn btn-sm btn-primary", disabled, onClick: openCreate }, "Add record"),
@@ -386,15 +638,22 @@
     );
   }
 
-  function ReferencePicker({ value, onChange, componentPropsJson, targetTableId, displayColumnId, pickerVariant, disabled, placeholder, designerMode }) {
+  function ReferencePicker({ value, onChange, componentPropsJson, targetTableId, displayColumnId, pickerVariant, disabled, placeholder, designerMode, parentRecordId, parentTableId, sourceFieldName, parentFieldName, relationshipMode, runtimeContext }) {
     const config = {
       ...parseProps(componentPropsJson),
       ...(targetTableId != null ? { targetTableId } : {}),
       ...(displayColumnId != null ? { displayColumnId } : {}),
+      ...(parentTableId != null ? { parentTableId } : {}),
+      ...(runtimeContext?.tableId != null && parentTableId == null ? { parentTableId: runtimeContext.tableId } : {}),
+      ...(sourceFieldName ? { sourceFieldName } : {}),
+      ...(parentFieldName ? { parentFieldName } : {}),
+      ...(relationshipMode ? { relationshipMode } : {}),
     };
+    const mode = getRelationshipMode(config);
+    const resolvedParentRecordId = getParentRecordId(config, parentRecordId ?? runtimeContext?.recordId);
 
-    if (pickerVariant === "table") {
-      return h(ReferenceTablePicker, { value, onChange, config, disabled, designerMode });
+    if (mode === "related" || pickerVariant === "table") {
+      return h(ReferenceTablePicker, { value, onChange, config, disabled, designerMode, parentRecordId: resolvedParentRecordId });
     }
 
     const selectedIds = useMemo(() => parseIds(value), [value]);
@@ -406,11 +665,12 @@
     const [error, setError] = useState("");
 
     const displayColumn = useMemo(
-      () => (table?.columns || []).find((column) => Number(column.id) === Number(config.displayColumnId)),
+      () => getDisplayColumn(table, config),
       [table, config.displayColumnId],
     );
 
     const label = useMemo(() => {
+      if (mode === "related") return placeholder || "Manage related records";
       if (!selectedIds.length) return placeholder || "Select records";
       if (!records.length) return `${selectedIds.length} selected`;
 
@@ -434,7 +694,7 @@
     }, [selectedIds.join(",")]);
 
     useEffect(() => {
-      if (designerMode || !config.targetTableId) {
+      if (designerMode || !config.targetTableId || (mode === "related" && (!resolvedParentRecordId || !getParentFieldName(config)))) {
         setTable(null);
         setRecords([]);
         return;
@@ -446,7 +706,7 @@
 
       Promise.all([
         request(`/api/tables/${config.targetTableId}`),
-        request(`/api/tables/${config.targetTableId}/records`),
+        request(`/api/tables/${config.targetTableId}/records${mode === "related" ? `?filterField=${encodeURIComponent(getParentFieldName(config))}&filterValue=${encodeURIComponent(resolvedParentRecordId || "")}` : ""}`),
       ])
         .then(([tableDetails, recordList]) => {
           if (!cancelled) {
@@ -464,7 +724,7 @@
       return () => {
         cancelled = true;
       };
-    }, [config.targetTableId, designerMode]);
+    }, [config.targetTableId, designerMode, mode, resolvedParentRecordId]);
 
     function toggleId(id, checked) {
       setDraftIds((current) => {
@@ -577,17 +837,23 @@
     );
   }
 
-  function ReferenceDisplay({ value, componentPropsJson, targetTableId, displayColumnId }) {
+  function ReferenceDisplay({ value, componentPropsJson, targetTableId, displayColumnId, parentRecordId, runtimeContext }) {
     const config = {
       ...parseProps(componentPropsJson),
       ...(targetTableId != null ? { targetTableId } : {}),
       ...(displayColumnId != null ? { displayColumnId } : {}),
     };
-    const ids = useMemo(() => parseIds(value), [value]);
+    const mode = getRelationshipMode(config);
+    const resolvedParentRecordId = getParentRecordId(config, parentRecordId ?? runtimeContext?.recordId);
+    const ids = useMemo(() => mode === "related" ? normalizeRelatedValue(value).ids : parseIds(value), [value, mode]);
     const [labels, setLabels] = useState([]);
 
     useEffect(() => {
-      if (!config.targetTableId || !ids.length) {
+      if (!config.targetTableId || (!ids.length && mode !== "related")) {
+        setLabels([]);
+        return;
+      }
+      if (mode === "related" && (!getParentFieldName(config) || !resolvedParentRecordId)) {
         setLabels([]);
         return;
       }
@@ -595,11 +861,12 @@
       let cancelled = false;
       Promise.all([
         request(`/api/tables/${config.targetTableId}`),
-        request(`/api/tables/${config.targetTableId}/records`),
+        request(`/api/tables/${config.targetTableId}/records${mode === "related" && getParentFieldName(config) && resolvedParentRecordId ? `?filterField=${encodeURIComponent(getParentFieldName(config))}&filterValue=${encodeURIComponent(resolvedParentRecordId)}` : ""}`),
       ]).then(([table, records]) => {
         if (cancelled) return;
-        const displayColumn = (table.columns || []).find((column) => Number(column.id) === Number(config.displayColumnId));
-        setLabels(ids.map((id) => getRecordDisplay(records.find((record) => Number(record.id) === Number(id)), displayColumn)));
+        const displayColumn = getDisplayColumn(table, config);
+        const visibleRecords = mode === "related" && !ids.length ? records : ids.map((id) => records.find((record) => Number(record.id) === Number(id))).filter(Boolean);
+        setLabels(visibleRecords.map((record) => getRecordDisplay(record, displayColumn)));
       }).catch(() => {
         if (!cancelled) setLabels(ids.map((id) => `#${id}`));
       });
@@ -607,16 +874,21 @@
       return () => {
         cancelled = true;
       };
-    }, [config.targetTableId, config.displayColumnId, ids.join(",")]);
+    }, [config.targetTableId, config.displayColumnId, mode, resolvedParentRecordId, ids.join(",")]);
 
-    if (!ids.length) return "";
+    if (!ids.length && mode !== "related") return "";
     return labels.length ? labels.join(", ") : `${ids.length} selected`;
   }
 
   window.Notcobase.ReferenceField = {
     parseProps,
     parseIds,
+    getRecordId,
     stringifyIds,
+    stringifyReferenceValue,
+    saveRelatedDrafts,
+    ensureParentLinkColumn,
+    normalizeRelatedValue,
     ReferencePicker,
     ReferenceTablePicker,
     ReferenceDisplay,

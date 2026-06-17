@@ -45,6 +45,15 @@
     const [tables, setTables] = useState([]);
     const [runtimeRecordId, setRuntimeRecordId] = useState("");
 
+    function replacePageUrl(pageId) {
+      const url = new URL(window.location.href);
+      url.search = "";
+      if (pageId) {
+        url.searchParams.set("pageId", pageId);
+      }
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
     useEffect(() => {
       loadPages();
       TablesApi.list()
@@ -113,6 +122,7 @@
       setActivePageId(created.id);
       setPageName(created.name);
       setSchema(SchemaUtils.ensureNodeIds(JSON.parse(created.schemaJson)));
+      replacePageUrl(created.id);
     }
 
     async function loadPage(id) {
@@ -121,6 +131,12 @@
       setPageName(page.name);
       setSchema(SchemaUtils.ensureNodeIds(JSON.parse(page.schemaJson)));
       DesignerStore.getState().setSelectedNodeId(null);
+    }
+
+    async function selectPage(id) {
+      await loadPage(id);
+      replacePageUrl(id);
+      setRuntimeRecordId("");
     }
 
     async function savePage() {
@@ -134,6 +150,8 @@
           });
           setActivePageId(created.id);
           setPages([...pages, created]);
+          replacePageUrl(created.id);
+          setRuntimeRecordId("");
           message.success("Schema created");
           return;
         }
@@ -156,6 +174,8 @@
       setActivePageId(null);
       setPageName("New page");
       setSchema(defaultSchema);
+      replacePageUrl(null);
+      setRuntimeRecordId("");
       DesignerStore.getState().setSelectedNodeId(null);
     }
 
@@ -175,7 +195,7 @@
           setPages(remainingPages);
 
           if (remainingPages.length > 0) {
-            loadPage(remainingPages[0].id);
+            selectPage(remainingPages[0].id);
           } else {
             createNewPage();
           }
@@ -261,7 +281,7 @@
                 className: "schema-page-select",
                 value: activePageId,
                 options: pageOptions,
-                onChange: loadPage,
+                onChange: selectPage,
               }),
               h(Input, {
                 className: "schema-page-name",

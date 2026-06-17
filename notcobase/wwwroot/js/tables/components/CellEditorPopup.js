@@ -40,6 +40,8 @@
             h(app.ReferenceField.ReferencePicker, {
               value: editor.value,
               componentPropsJson: editor.componentPropsJson,
+              parentRecordId: editor.recordId,
+              pickerVariant: editor.componentPropsJson?.relationshipMode === "related" ? "table" : undefined,
               placeholder: "Select records",
               onChange: onValueChange,
             }),

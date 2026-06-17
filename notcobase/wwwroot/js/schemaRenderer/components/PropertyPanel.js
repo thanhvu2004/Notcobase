@@ -78,7 +78,7 @@
       return h(Alert, { type: "error", showIcon: true, message: error });
     }
 
-    const columns = tableDetails?.columns || [];
+    const columns = BlockUtils.getVisibleColumns(tableDetails?.columns || []);
     if (!columns.length) {
       return h(Alert, {
         type: "warning",
@@ -475,6 +475,10 @@
       label: page.name,
       value: page.id,
     }));
+    const tableOptions = (tables || []).map((table) => ({
+      label: table.name,
+      value: table.id,
+    }));
 
     function updateSelectedNode(updater) {
       onSchemaChange(SchemaUtils.updateNode(schema, selectedNodeId, updater));
@@ -501,6 +505,32 @@
     function replaceSelectedNode(nextNode) {
       setPropsText(JSON.stringify(nextNode["x-component-props"] || {}, null, 2));
       onSchemaChange(SchemaUtils.updateNode(schema, selectedNodeId, () => nextNode));
+    }
+
+    function updateReferenceProps(nextProps) {
+      updateSelectedNode((draft) => {
+        draft["x-component-props"] = {
+          ...(draft["x-component-props"] || {}),
+          ...nextProps,
+        };
+        setPropsText(JSON.stringify(draft["x-component-props"], null, 2));
+        return draft;
+      });
+    }
+
+    async function ensureReferenceParentLink(nextProps) {
+      if (componentName !== "Reference" || nextProps?.relationshipMode !== "related") {
+        return;
+      }
+
+      try {
+        await window.Notcobase.ReferenceField?.ensureParentLinkColumn?.({
+          ...nextProps,
+          sourceFieldName: node["x-field"],
+        });
+      } catch (error) {
+        window.antd?.message?.error?.(error.message || "Failed to create parent link field");
+      }
     }
 
     async function handleFormBlockTableChange(tableId) {
@@ -601,6 +631,71 @@
                 return draft;
               }),
             }),
+          ),
+        componentName === "Reference" &&
+          h(
+            React.Fragment,
+            null,
+            h(Divider, { orientation: "left", plain: true }, "Reference"),
+            h(
+              Form.Item,
+              { label: "Target table" },
+              h(Select, {
+                allowClear: true,
+                showSearch: true,
+                options: tableOptions,
+                value: node["x-component-props"]?.targetTableId ?? undefined,
+                onChange: (value) => {
+                  const nextProps = {
+                    ...(node["x-component-props"] || {}),
+                    targetTableId: value ?? null,
+                    parentFieldName: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
+                  };
+                  updateReferenceProps(nextProps);
+                  ensureReferenceParentLink(nextProps);
+                },
+              }),
+            ),
+            h(
+              Form.Item,
+              { label: "Relationship mode" },
+              h(Select, {
+                value: node["x-component-props"]?.relationshipMode || "lookup",
+                options: [
+                  { label: "Lookup mode", value: "lookup" },
+                  { label: "Related record mode", value: "related" },
+                ],
+                onChange: (value) => {
+                  const nextProps = {
+                    ...(node["x-component-props"] || {}),
+                    relationshipMode: value,
+                    parentFieldName: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
+                  };
+                  updateReferenceProps(nextProps);
+                  ensureReferenceParentLink(nextProps);
+                },
+              }),
+            ),
+            (node["x-component-props"]?.relationshipMode === "related") &&
+              h(
+                Form.Item,
+                { label: "Parent link field" },
+                h(Input, {
+                  value: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
+                  placeholder: node["x-field"] || "Parent id field on target table",
+                  onChange: (event) => updateReferenceProps({
+                    ...(node["x-component-props"] || {}),
+                    relationshipMode: "related",
+                    parentFieldName: event.target.value,
+                  }),
+                  onBlur: (event) => ensureReferenceParentLink({
+                    ...(node["x-component-props"] || {}),
+                    relationshipMode: "related",
+                    parentFieldName: event.target.value,
+                  }),
+                }),
+              ),
+            h(Typography.Text, { type: "secondary" }, "Display defaults to the target record id."),
           ),
         (componentName === "Button" || componentName === "Action") &&
           h(

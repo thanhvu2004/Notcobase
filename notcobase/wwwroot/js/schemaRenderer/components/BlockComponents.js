@@ -39,18 +39,30 @@
     });
   }
 
-  function renderFieldInput(field) {
+  function parseFieldComponentProps(field) {
+    try {
+      return field.componentPropsJson
+        ? typeof field.componentPropsJson === "string"
+          ? JSON.parse(field.componentPropsJson || "{}")
+          : field.componentPropsJson
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function getNormalizedFieldType(field) {
+    return String(field?.fieldType || "text").toLowerCase();
+  }
+
+  function renderFieldInput(field, options = {}) {
     const common = {
       placeholder: field.label,
     };
 
-    const componentProps = field.componentPropsJson
-      ? typeof field.componentPropsJson === "string"
-        ? JSON.parse(field.componentPropsJson || "{}")
-        : field.componentPropsJson
-      : {};
+    const componentProps = parseFieldComponentProps(field);
 
-    switch ((field.fieldType || "text").toLowerCase()) {
+    switch (getNormalizedFieldType(field)) {
       case "number":
       case "finance":
         return h(InputNumber, { ...common, style: { width: "100%" } });
@@ -89,6 +101,8 @@
           ...common,
           componentPropsJson: componentProps,
           pickerVariant: "table",
+          parentRecordId: options.parentRecordId,
+          parentTableId: options.parentTableId,
         });
       case "list":
         return h(Select, {
@@ -97,6 +111,8 @@
           allowClear: true,
           style: { width: "100%" },
         });
+      case "file":
+        return h(Input, { ...common, type: "file" });
       case "checkbox":
         return h(Checkbox, null);
       default:
@@ -105,7 +121,7 @@
   }
 
   function getFieldValuePropName(field) {
-    const type = String(field?.fieldType || "").toLowerCase();
+    const type = getNormalizedFieldType(field);
     return type === "boolean" || type === "checkbox" ? "checked" : "value";
   }
 
@@ -147,6 +163,7 @@
     let resetAfterCreate = true;
     let saving = false;
     let values = {};
+    let loadedRecord = null;
     const listeners = new Set();
 
     function notify() {
@@ -175,7 +192,16 @@
       register(instanceKey, form, schema) {
         forms.set(instanceKey, form);
         schemas.set(instanceKey, schema);
-        form.setFieldsValue(values);
+        if (loadedRecord) {
+          const mappedValues = BlockUtils.mapRecordToFormValues(schema, loadedRecord);
+          values = {
+            ...values,
+            ...mappedValues,
+          };
+          form.setFieldsValue(mappedValues);
+        } else {
+          form.setFieldsValue(values);
+        }
         return () => {
           forms.delete(instanceKey);
           schemas.delete(instanceKey);
@@ -194,6 +220,7 @@
         notify();
       },
       loadRecord(record, sourceSchema) {
+        loadedRecord = record;
         const mappedValues = {};
         schemas.forEach((schema) => {
           Object.assign(mappedValues, BlockUtils.mapRecordToFormValues(schema, record));
@@ -204,6 +231,7 @@
         this.setValues(mappedValues);
       },
       reset() {
+        loadedRecord = null;
         values = {};
         forms.forEach((form) => form.resetFields());
         notify();
@@ -244,9 +272,18 @@
           }
 
           const created = await RecordsApi.create(tableId, normalizedPayload);
-          recordId = created.id;
+          const createdId = window.Notcobase.ReferenceField.getRecordId(created);
+          recordId = createdId;
+          const relatedPayload = {};
+          for (const schema of schemas.values()) {
+            Object.assign(relatedPayload, await saveRelatedReferences(schema, allValues, createdId));
+          }
+          const normalizedRelatedPayload = BlockUtils.normalizePayloadToTableColumns(relatedPayload, tableDetails);
+          if (Object.keys(normalizedRelatedPayload).length) {
+            await RecordsApi.update(tableId, createdId, normalizedRelatedPayload);
+          }
           message.success("Record created");
-          onRecordSaved?.({ tableId, recordId: created.id, mode: "create", formGroupKey: groupKey });
+          onRecordSaved?.({ tableId, recordId: createdId, mode: "create", formGroupKey: groupKey });
 
           if (resetAfterCreate) {
             this.reset();
@@ -347,7 +384,7 @@
     return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
   }
 
-  function formatBlockTableValue(value, fieldType) {
+  function formatBlockTableValue(value, fieldType, componentPropsJson) {
     const type = String(fieldType || "").toLowerCase();
 
     if (type === "checkbox" || type === "boolean") {
@@ -359,7 +396,7 @@
     }
 
     if (type === "reference") {
-      return window.Notcobase.ReferenceField.stringifyIds(value);
+      return window.Notcobase.ReferenceField.stringifyReferenceValue(value, componentPropsJson);
     }
 
     if (Array.isArray(value)) {
@@ -377,7 +414,7 @@
     return String(value ?? "");
   }
 
-  function renderBlockTableValue(value, fieldType, componentPropsJson) {
+  function renderBlockTableValue(value, fieldType, componentPropsJson, record) {
     const type = String(fieldType || "").toLowerCase();
 
     if (type === "checkbox" || type === "boolean") {
@@ -388,11 +425,49 @@
       return h(window.Notcobase.ReferenceField.ReferenceDisplay, {
         value,
         componentPropsJson,
+        parentRecordId: record?.__recordId || record?.id,
       });
     }
 
-    const displayValue = formatBlockTableValue(value, fieldType);
+    const displayValue = formatBlockTableValue(value, fieldType, componentPropsJson);
     return displayValue === "" ? "—" : displayValue;
+  }
+
+  async function saveRelatedReferences(schema, values, parentRecordId) {
+    const tasks = [];
+    const relatedPayload = {};
+
+    function collect(node) {
+      SchemaUtils.sortSchemaEntries(node?.properties).forEach(([key, childSchema]) => {
+        if (childSchema?.properties) {
+          collect(childSchema);
+        }
+
+        if (SchemaUtils.inferComponent(childSchema) !== "Reference") {
+          return;
+        }
+
+        const fieldName = childSchema["x-field"] || key;
+        const value = values?.[key] ?? values?.[fieldName];
+        const props = childSchema["x-component-props"] || {};
+        if (props.relationshipMode === "related" && value) {
+          const config = {
+            ...props,
+            sourceFieldName: fieldName,
+          };
+          tasks.push(
+            window.Notcobase.ReferenceField.saveRelatedDrafts(value, config, parentRecordId)
+              .then((ids) => {
+                relatedPayload[fieldName] = window.Notcobase.ReferenceField.stringifyReferenceValue({ ids, drafts: [] }, config);
+              }),
+          );
+        }
+      });
+    }
+
+    collect(schema);
+    await Promise.all(tasks);
+    return relatedPayload;
   }
 
   function compareBlockTableValues(left, right, dataIndex, fieldType) {
@@ -758,8 +833,14 @@
         }
 
         const created = await RecordsApi.create(tableId, payload);
+        const createdId = window.Notcobase.ReferenceField.getRecordId(created);
+        const relatedPayload = await saveRelatedReferences(schema, values, createdId);
+        const normalizedRelatedPayload = BlockUtils.normalizePayloadToTableColumns(relatedPayload, tableDetails);
+        if (Object.keys(normalizedRelatedPayload).length) {
+          await RecordsApi.update(tableId, createdId, normalizedRelatedPayload);
+        }
         message.success("Record created");
-        context.onRecordSaved?.({ tableId, recordId: created.id, mode: "create" });
+        context.onRecordSaved?.({ tableId, recordId: createdId, mode: "create" });
 
         if (config.resetAfterCreate !== false) {
           form.resetFields();
@@ -892,7 +973,7 @@
           fieldType,
           componentPropsJson,
           key: getBlockColumnKey(column),
-          render: (value) => renderBlockTableValue(value, fieldType, componentPropsJson),
+          render: (value, record) => renderBlockTableValue(value, fieldType, componentPropsJson, record),
         };
       });
     }, [tableDetails, config.columns]);
@@ -1125,14 +1206,53 @@
         const values = await form.validateFields();
         setSaving(true);
         const payload = { ...values };
+        formFields.forEach((field) => {
+          const props = parseFieldComponentProps(field);
+          if (getNormalizedFieldType(field) === "reference" && props.relationshipMode === "related") {
+            payload[field.name] = window.Notcobase.ReferenceField.stringifyReferenceValue(values[field.name], props);
+          }
+        });
 
         const normalizedPayload = BlockUtils.normalizePayloadToTableColumns(payload, tableDetails);
 
         if (editingRecord?.__recordId) {
           await RecordsApi.update(tableId, editingRecord.__recordId, normalizedPayload);
+          const relatedPayload = {};
+          for (const field of formFields) {
+            const props = parseFieldComponentProps(field);
+            if (getNormalizedFieldType(field) === "reference" && props.relationshipMode === "related") {
+              const relatedConfig = {
+                ...props,
+                sourceFieldName: field.name,
+              };
+              const ids = await window.Notcobase.ReferenceField.saveRelatedDrafts(values[field.name], relatedConfig, editingRecord.__recordId);
+              relatedPayload[field.name] = window.Notcobase.ReferenceField.stringifyReferenceValue({ ids, drafts: [] }, relatedConfig);
+            }
+          }
+          const normalizedRelatedPayload = BlockUtils.normalizePayloadToTableColumns(relatedPayload, tableDetails);
+          if (Object.keys(normalizedRelatedPayload).length) {
+            await RecordsApi.update(tableId, editingRecord.__recordId, normalizedRelatedPayload);
+          }
           message.success("Record updated");
         } else {
-          await RecordsApi.create(tableId, normalizedPayload);
+          const created = await RecordsApi.create(tableId, normalizedPayload);
+          const createdId = window.Notcobase.ReferenceField.getRecordId(created);
+          const relatedPayload = {};
+          for (const field of formFields) {
+            const props = parseFieldComponentProps(field);
+            if (getNormalizedFieldType(field) === "reference" && props.relationshipMode === "related") {
+              const relatedConfig = {
+                ...props,
+                sourceFieldName: field.name,
+              };
+              const ids = await window.Notcobase.ReferenceField.saveRelatedDrafts(values[field.name], relatedConfig, createdId);
+              relatedPayload[field.name] = window.Notcobase.ReferenceField.stringifyReferenceValue({ ids, drafts: [] }, relatedConfig);
+            }
+          }
+          const normalizedRelatedPayload = BlockUtils.normalizePayloadToTableColumns(relatedPayload, tableDetails);
+          if (Object.keys(normalizedRelatedPayload).length) {
+            await RecordsApi.update(tableId, createdId, normalizedRelatedPayload);
+          }
           message.success("Record created");
         }
 
@@ -1500,10 +1620,17 @@
                     key: field.name,
                     name: field.name,
                     label: field.label,
+                    required: Boolean(field.required),
                     rules: field.required ? [{ required: true, message: `${field.label} is required` }] : [],
-                    valuePropName: field.fieldType === "boolean" ? "checked" : "value",
+                    valuePropName: getNormalizedFieldType(field) === "file" ? "data-value" : getFieldValuePropName(field),
+                    getValueFromEvent: getNormalizedFieldType(field) === "file"
+                      ? (event) => event?.target?.files?.[0]?.name || ""
+                      : undefined,
                   },
-                  renderFieldInput(field),
+                  renderFieldInput(field, {
+                    parentRecordId: editingRecord?.__recordId,
+                    parentTableId: tableId,
+                  }),
                 ),
               ),
             )

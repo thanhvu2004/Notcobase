@@ -7,6 +7,8 @@
       const query = new URLSearchParams();
       if (params?.skip != null) query.set("skip", String(params.skip));
       if (params?.limit != null) query.set("limit", String(params.limit));
+      if (params?.filterField) query.set("filterField", String(params.filterField));
+      if (params?.filterValue != null) query.set("filterValue", String(params.filterValue));
       const suffix = query.toString() ? `?${query}` : "";
       return request(`/api/tables/${tableId}/records${suffix}`);
     },

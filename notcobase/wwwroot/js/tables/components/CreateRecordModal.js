@@ -2,6 +2,111 @@
 const h = React.createElement;
 const { Modal } = app;
 
+function parseComponentProps(column) {
+  try {
+    return typeof column.componentPropsJson === "string"
+      ? JSON.parse(column.componentPropsJson)
+      : (column.componentPropsJson || {});
+  } catch {
+    return {};
+  }
+}
+
+function getFieldType(column) {
+  return String(column.fieldType || "text").toLowerCase();
+}
+
+function renderRecordInput(column, recordForm, onRecordFormChange) {
+  const type = getFieldType(column);
+  const value = recordForm[column.name];
+
+  if (type === "reference") {
+    const componentProps = parseComponentProps(column);
+    return h(app.ReferenceField.ReferencePicker, {
+      value,
+      componentPropsJson: column.componentPropsJson,
+      pickerVariant: componentProps.relationshipMode === "related" ? "table" : undefined,
+      placeholder: "Select records",
+      onChange: (nextValue) => onRecordFormChange({ ...recordForm, [column.name]: nextValue }),
+    });
+  }
+
+  if (type === "checkbox" || type === "boolean") {
+    return h(
+      "div",
+      { className: "form-check" },
+      h("input", {
+        className: "form-check-input",
+        type: "checkbox",
+        checked: Boolean(value),
+        onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.checked }),
+      }),
+      h("label", { className: "form-check-label" }, "Checked"),
+    );
+  }
+
+  if (type === "select") {
+    const componentProps = parseComponentProps(column);
+    return h(
+      "select",
+      {
+        className: "form-control",
+        required: column.isRequired,
+        value: value ?? "",
+        onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
+      },
+      h("option", { value: "" }, "-- Select --"),
+      (componentProps.options || []).map((option) => {
+        const optionValue = typeof option === "object" ? option.value : option;
+        const optionLabel = typeof option === "object" ? option.label : option;
+        return h("option", { key: optionValue, value: optionValue }, optionLabel);
+      }),
+    );
+  }
+
+  if (type === "list") {
+    return h("input", {
+      className: "form-control",
+      required: column.isRequired,
+      value: Array.isArray(value) ? value.join(", ") : (value ?? ""),
+      placeholder: "Comma-separated values",
+      onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }),
+    });
+  }
+
+  if (type === "longtext") {
+    return h("textarea", {
+      className: "form-control",
+      rows: 4,
+      required: column.isRequired,
+      value: value ?? "",
+      onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
+    });
+  }
+
+  if (type === "file") {
+    return h("input", {
+      className: "form-control",
+      type: "file",
+      required: column.isRequired,
+      onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.files?.[0]?.name || "" }),
+    });
+  }
+
+  return h("input", {
+    className: "form-control",
+    type:
+      type === "number" ? "number" :
+      type === "date" ? "date" :
+      type === "url" ? "url" :
+      type === "finance" ? "number" :
+      "text",
+    required: column.isRequired,
+    value: value ?? "",
+    onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
+  });
+}
+
 function CreateRecordModal({ isOpen, activeTable, columns, recordForm, onRecordFormChange, onListItemChange, onAddListItem, onRemoveListItem, onSubmit, onClose, saving }) {
   if (!isOpen || !activeTable) return null;
 
@@ -19,70 +124,7 @@ function CreateRecordModal({ isOpen, activeTable, columns, recordForm, onRecordF
             "div",
             { className: "mb-3", key: column.id },
             h("label", { className: "form-label" }, column.name, column.isRequired && h("span", { className: "text-danger" }, " *"),),
-            column.fieldType === "reference"
-              ? h(app.ReferenceField.ReferencePicker, {
-                  value: recordForm[column.name],
-                  componentPropsJson: column.componentPropsJson,
-                  placeholder: "Select records",
-                  onChange: (value) => onRecordFormChange({ ...recordForm, [column.name]: value }),
-                })
-              : column.fieldType === "checkbox"
-              ? h(
-                  "div",
-                  { className: "form-check" },
-                  h("input", {
-                    className: "form-check-input",
-                    type: "checkbox",
-                    checked: Boolean(recordForm[column.name]),
-                    onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.checked }),
-                  }),
-                  h("label", { className: "form-check-label" }, "Checked"),
-                )
-              : column.fieldType === "select"
-                ? (() => {
-                    let componentPropsJson = {};
-                    try {
-                      componentPropsJson = typeof column.componentPropsJson === "string" 
-                        ? JSON.parse(column.componentPropsJson) 
-                        : (column.componentPropsJson || {});
-                    } catch (e) {
-                      // ignore parse errors
-                    }
-                    return h(
-                      "select",
-                      {
-                        className: "form-control",
-                        required: column.isRequired,
-                        value: recordForm[column.name] ?? "",
-                        onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
-                      },
-                      h("option", { value: "" }, "-- Select --"),
-                      (componentPropsJson.options || []).map((option) =>
-                        h("option", { key: option, value: option }, option)
-                      )
-                    );
-                  })()
-            : column.fieldType === "longtext"
-              ? h("textarea", {
-                  className: "form-control",
-                  rows: 4,
-                  required: column.isRequired,
-                  value: recordForm[column.name] ?? "",
-                  onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
-                })
-                : h("input", {
-                    className: "form-control",
-                    type: 
-                      column.fieldType === "number" ? "number" : 
-                      column.fieldType === "date" ? "date" : 
-                      column.fieldType === "url" ? "url" : 
-                      column.fieldType === "finance" ? "number" : 
-                      column.fieldType === "file" ? "file" :
-                      "text",
-                    required: column.isRequired,
-                    value: recordForm[column.name] ?? "",
-                    onChange: (event) => onRecordFormChange({ ...recordForm, [column.name]: event.target.value }),
-                  }),
+            renderRecordInput(column, recordForm, onRecordFormChange),
           ),
         ),
       ),

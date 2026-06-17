@@ -59,8 +59,18 @@
       props.placeholder = props.placeholder || schema.placeholder || (schema.title ? `Select ${schema.title}` : undefined);
     }
 
-    if (componentName === "Reference" && context.mode === "designer") {
-      props.designerMode = true;
+    if (componentName === "Reference") {
+      props.sourceFieldName = props.sourceFieldName || schema["x-field"] || context.name;
+      if (props.relationshipMode === "related" && !props.parentFieldName) {
+        props.parentFieldName = props.sourceFieldName;
+      }
+      if (context.runtimeContext?.tableId && props.parentTableId == null) {
+        props.parentTableId = context.runtimeContext.tableId;
+      }
+      props.runtimeContext = context.runtimeContext;
+      if (context.mode === "designer") {
+        props.designerMode = true;
+      }
     }
 
     if (context.insideFormBlock && registryItem?.field) {
@@ -84,6 +94,19 @@
 
   function renderProperties(schema, context) {
     const insideFormBlock = SchemaUtils.isFormLikeBlock(schema) || context.insideFormBlock;
+    const componentName = SchemaUtils.inferComponent(schema);
+    const blockConfig = schema?.["x-component-props"] || {};
+    const blockRecordId = (componentName === "FormBlock" || componentName === "DetailCard")
+      ? BlockUtils.resolveRecordId(blockConfig, context.runtimeContext)
+      : null;
+    const childRuntimeContext = blockRecordId
+      ? {
+          ...(context.runtimeContext || {}),
+          recordId: blockRecordId,
+          parentRecordId: blockRecordId,
+          tableId: blockConfig.tableId ?? context.runtimeContext?.tableId,
+        }
+      : context.runtimeContext;
 
     return SchemaUtils.sortSchemaEntries(schema.properties).map(([propertyName, propertySchema]) =>
       renderSchemaNode(propertySchema, {
@@ -93,6 +116,7 @@
         path: [...context.path, propertyName],
         isRoot: false,
         insideFormBlock,
+        runtimeContext: childRuntimeContext,
       }),
     );
   }
@@ -447,7 +471,12 @@
   }
 
   function renderSchemaNode(schema, context) {
-    if (!schema || schema["x-hidden"]) {
+    if (
+      !schema
+      || schema["x-hidden"]
+      || schema?.["x-component-props"]?.hiddenInForms === true
+      || schema?.["x-component-props"]?.type === "parent-link"
+    ) {
       return null;
     }
 

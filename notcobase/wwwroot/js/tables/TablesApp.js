@@ -353,7 +353,7 @@ function TablesApp() {
 
     const data = columnState.columns.reduce((values, column) => {
       const rawValue = recordState.recordForm[column.name];
-      const coercedValue = coerceRecordValue(rawValue, column.fieldType);
+      const coercedValue = coerceRecordValue(rawValue, column.fieldType, column.componentPropsJson);
 
       // Skip undefined or empty optional values
       if (
@@ -375,7 +375,22 @@ function TablesApp() {
 
     try {
       setSaving(true);
-      await RecordOperations.createRecord(selectedTableId, data);
+      const created = await RecordOperations.createRecord(selectedTableId, data);
+      const parentRecordId = app.ReferenceField.getRecordId(created);
+      if (parentRecordId) {
+        const relatedSaves = columnState.columns
+          .filter((column) => column.fieldType === "reference")
+          .map((column) => {
+            const props = app.ReferenceField.parseProps(column.componentPropsJson);
+            if (props.relationshipMode !== "related") return null;
+            return app.ReferenceField.saveRelatedDrafts(recordState.recordForm[column.name], {
+              ...props,
+              sourceFieldName: column.name,
+            }, parentRecordId);
+          })
+          .filter(Boolean);
+        await Promise.all(relatedSaves);
+      }
       setShowCreateRecord(false);
       recordState.resetRecordForm();
       await refreshSelectedTable();

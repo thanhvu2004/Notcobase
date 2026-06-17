@@ -5,7 +5,8 @@ const { Modal, TableOperations } = app;
 
 function ReferenceModal({ isOpen, column, tables, onSave, onClose }) {
   const [targetTableId, setTargetTableId] = useState("");
-  const [displayColumnId, setDisplayColumnId] = useState("");
+  const [relationshipMode, setRelationshipMode] = useState("lookup");
+  const [parentFieldName, setParentFieldName] = useState("");
   const [targetColumns, setTargetColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -15,9 +16,10 @@ function ReferenceModal({ isOpen, column, tables, onSave, onClose }) {
   useEffect(() => {
     if (!isOpen) return;
     setTargetTableId(config.targetTableId ? String(config.targetTableId) : "");
-    setDisplayColumnId(config.displayColumnId ? String(config.displayColumnId) : "");
+    setRelationshipMode(config.relationshipMode === "related" ? "related" : "lookup");
+    setParentFieldName(config.parentFieldName || column?.name || "");
     setError("");
-  }, [isOpen, config.targetTableId, config.displayColumnId]);
+  }, [isOpen, config.targetTableId, config.relationshipMode, config.parentFieldName, column?.name]);
 
   useEffect(() => {
     if (!isOpen || !targetTableId) {
@@ -46,23 +48,30 @@ function ReferenceModal({ isOpen, column, tables, onSave, onClose }) {
     };
   }, [isOpen, targetTableId]);
 
-  useEffect(() => {
-    if (targetColumns.length && !targetColumns.some((item) => String(item.id) === String(displayColumnId))) {
-      setDisplayColumnId(String(targetColumns[0].id));
-    }
-  }, [targetColumns, displayColumnId]);
-
   if (!isOpen || !column) return null;
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    if (!targetTableId || !displayColumnId) return;
+    if (!targetTableId || (relationshipMode === "related" && !parentFieldName.trim())) return;
 
-    onSave(JSON.stringify({
+    const nextConfig = {
       type: "reference",
       targetTableId: Number(targetTableId),
-      displayColumnId: Number(displayColumnId),
-    }));
+      displayColumnId: "id",
+      relationshipMode,
+      parentFieldName: relationshipMode === "related" ? parentFieldName.trim() : "",
+    };
+
+    try {
+      setLoading(true);
+      setError("");
+      await app.ReferenceField.ensureParentLinkColumn(nextConfig);
+      onSave(JSON.stringify(nextConfig));
+    } catch (saveError) {
+      setError(saveError.message || "Failed to create parent link field");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return h(
@@ -87,25 +96,37 @@ function ReferenceModal({ isOpen, column, tables, onSave, onClose }) {
           h("option", { value: "" }, "Select table"),
           (tables || []).map((table) => h("option", { key: table.id, value: table.id }, table.name)),
         ),
-        h("label", { className: "form-label" }, "Display column"),
+        h("label", { className: "form-label" }, "Relationship mode"),
         h(
           "select",
           {
-            className: "form-select",
+            className: "form-select mb-3",
             required: true,
-            disabled: !targetTableId || loading || !targetColumns.length,
-            value: displayColumnId,
-            onChange: (event) => setDisplayColumnId(event.target.value),
+            value: relationshipMode,
+            onChange: (event) => setRelationshipMode(event.target.value),
           },
-          h("option", { value: "" }, loading ? "Loading..." : "Select display column"),
-          targetColumns.map((columnItem) => h("option", { key: columnItem.id, value: columnItem.id }, columnItem.name)),
+          h("option", { value: "lookup" }, "Lookup mode"),
+          h("option", { value: "related" }, "Related record mode"),
         ),
+        relationshipMode === "related" && h(React.Fragment, null,
+          h("label", { className: "form-label" }, "Parent link field on target table"),
+          h("input", {
+            className: "form-control",
+            required: true,
+            value: parentFieldName,
+            placeholder: column.name,
+            onChange: (event) => setParentFieldName(event.target.value),
+          }),
+          targetTableId && !loading && !targetColumns.some((item) => item.name.toLowerCase() === parentFieldName.toLowerCase()) &&
+            h("div", { className: "form-text" }, "This field will be created on the target table when you save."),
+        ),
+        h("div", { className: "form-text mt-3" }, "Display defaults to the target record id."),
       ),
       h(
         "div",
         { className: "modal-footer" },
         h("button", { type: "button", className: "btn btn-secondary", onClick: onClose }, "Cancel"),
-        h("button", { className: "btn btn-primary", disabled: !targetTableId || !displayColumnId }, "Save reference"),
+        h("button", { className: "btn btn-primary", disabled: !targetTableId || (relationshipMode === "related" && !parentFieldName.trim()) }, "Save reference"),
       ),
     ),
   );

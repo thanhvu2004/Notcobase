@@ -44,7 +44,7 @@
       .filter((item) => item.length > 0);
   }
 
-  function coerceRecordValue(value, fieldType) { // coerce value to the appropriate type based on fieldType
+  function coerceRecordValue(value, fieldType, componentPropsJson) { // coerce value to the appropriate type based on fieldType
     if (fieldType === "number") {
       return value === "" ? null : Number(value);
     }
@@ -58,7 +58,10 @@
     }
 
     if (fieldType === "reference") {
-      return app.ReferenceField.stringifyIds(value);
+      return app.ReferenceField.stringifyReferenceValue(
+        value,
+        app.ReferenceField.parseProps(componentPropsJson),
+      );
     }
 
     return value;
@@ -74,7 +77,7 @@
     }
 
     if (fieldType === "reference") {
-      return app.ReferenceField.stringifyIds(value);
+      return app.ReferenceField.stringifyReferenceValue(value);
     }
 
     return String(value ?? "");
