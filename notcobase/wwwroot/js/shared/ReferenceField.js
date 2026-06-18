@@ -237,6 +237,52 @@
     });
   }
 
+  async function cleanupParentLinkColumn(config) {
+    const mode = getRelationshipMode(config);
+    const targetTableId = config?.targetTableId;
+    const parentFieldName = getParentFieldName(config);
+
+    if (mode !== "related" || !targetTableId || !parentFieldName) {
+      return false;
+    }
+
+    const targetTable = await request(`/api/tables/${targetTableId}`);
+    const linkColumn = (targetTable?.columns || []).find((column) => {
+      const props = parseProps(column.componentPropsJson);
+      return Number(column.tableId) === Number(targetTableId) &&
+        String(column.name || "").toLowerCase() === parentFieldName.toLowerCase() &&
+        props.type === "parent-link";
+    });
+
+    if (!linkColumn) {
+      return false;
+    }
+
+    const tables = await request("/api/tables");
+    const tableDetails = await Promise.all((tables || []).map((table) => (
+      request(`/api/tables/${table.id}`).catch(() => null)
+    )));
+
+    const stillUsed = tableDetails.some((table) => (table?.columns || []).some((column) => {
+      if (Number(column.id) === Number(config.sourceColumnId)) {
+        return false;
+      }
+
+      const props = parseProps(column.componentPropsJson);
+      return String(column.fieldType || "").toLowerCase() === "reference" &&
+        getRelationshipMode(props) === "related" &&
+        Number(props.targetTableId) === Number(targetTableId) &&
+        getParentFieldName({ ...props, sourceFieldName: column.name }).toLowerCase() === parentFieldName.toLowerCase();
+    }));
+
+    if (stillUsed) {
+      return false;
+    }
+
+    await request(`/api/tables/${targetTableId}/columns/${linkColumn.id}`, { method: "DELETE" });
+    return true;
+  }
+
   function renderBasicFieldInput(field, value, onChange) {
     const type = String(field.fieldType || "text").toLowerCase();
     const componentProps = parseProps(field.componentPropsJson);
@@ -888,6 +934,7 @@
     stringifyReferenceValue,
     saveRelatedDrafts,
     ensureParentLinkColumn,
+    cleanupParentLinkColumn,
     normalizeRelatedValue,
     ReferencePicker,
     ReferenceTablePicker,

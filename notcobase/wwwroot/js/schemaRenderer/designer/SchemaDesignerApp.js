@@ -246,6 +246,17 @@
         return;
       }
 
+      if (SchemaUtils.inferComponent(result.removed) === "Reference") {
+        const props = result.removed["x-component-props"] || {};
+        window.Notcobase.ReferenceField?.cleanupParentLinkColumn?.({
+          ...props,
+          sourceFieldName: result.removed["x-field"],
+          parentFieldName: props.parentFieldName || result.removed["x-field"] || "",
+        }).catch((error) => {
+          message.error(error.message || "Failed to remove old parent link field");
+        });
+      }
+
       handleSchemaChange(result.schema);
       DesignerStore.getState().clearInteractionState();
     }

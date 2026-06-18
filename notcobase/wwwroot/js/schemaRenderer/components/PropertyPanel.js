@@ -2,7 +2,7 @@
   window.Notcobase = window.Notcobase || {};
 
   const h = React.createElement;
-  const { useEffect, useState } = React;
+  const { useEffect, useRef, useState } = React;
   const { Alert, Button, Card, Checkbox, Divider, Form, Input, InputNumber, Select, Space, Spin, Tag, Typography } = antd;
   const { BlockUtils, ComponentRegistry, SchemaUtils, TablesApi, useDesignerStore } = window.Notcobase;
 
@@ -617,6 +617,8 @@
     const selectedMatch = SchemaUtils.findNode(schema, selectedNodeId);
     const [propsError, setPropsError] = useState("");
     const [propsText, setPropsText] = useState("{}");
+    const parentLinkEditStartPropsRef = useRef(null);
+    const fieldEditStartRef = useRef(null);
 
     useEffect(() => {
       if (selectedMatch?.node) {
@@ -692,6 +694,34 @@
         setPropsText(JSON.stringify(draft["x-component-props"], null, 2));
         return draft;
       });
+    }
+
+    async function cleanupReferenceParentLink(previousProps, nextProps) {
+      if (componentName !== "Reference" || previousProps?.relationshipMode !== "related") {
+        return;
+      }
+
+      const previousTargetTableId = previousProps.targetTableId ?? null;
+      const nextTargetTableId = nextProps?.targetTableId ?? null;
+      const previousParentField = previousProps.parentFieldName || node["x-field"] || "";
+      const nextParentField = nextProps?.parentFieldName || node["x-field"] || "";
+      const stillSameRelatedLink = nextProps?.relationshipMode === "related" &&
+        Number(previousTargetTableId) === Number(nextTargetTableId) &&
+        String(previousParentField).toLowerCase() === String(nextParentField).toLowerCase();
+
+      if (stillSameRelatedLink) {
+        return;
+      }
+
+      try {
+        await window.Notcobase.ReferenceField?.cleanupParentLinkColumn?.({
+          ...previousProps,
+          sourceFieldName: node["x-field"],
+          parentFieldName: previousParentField,
+        });
+      } catch (error) {
+        window.antd?.message?.error?.(error.message || "Failed to remove old parent link field");
+      }
     }
 
     async function ensureReferenceParentLink(nextProps) {
@@ -798,6 +828,12 @@
             h(Input, {
               value: node["x-field"] || "",
               placeholder: "Table column name",
+              onFocus: () => {
+                fieldEditStartRef.current = {
+                  fieldName: node["x-field"] || "",
+                  props: node["x-component-props"] || {},
+                };
+              },
               onChange: (event) => updateSelectedNode((draft) => {
                 if (event.target.value) {
                   draft["x-field"] = event.target.value;
@@ -806,6 +842,46 @@
                 }
                 return draft;
               }),
+              onBlur: (event) => {
+                if (componentName !== "Reference") {
+                  fieldEditStartRef.current = null;
+                  return;
+                }
+
+                const previousFieldName = fieldEditStartRef.current?.fieldName || "";
+                const previousProps = fieldEditStartRef.current?.props || node["x-component-props"] || {};
+                const nextFieldName = event.target.value || "";
+                fieldEditStartRef.current = null;
+
+                if (
+                  previousProps.relationshipMode !== "related" ||
+                  !previousFieldName ||
+                  String(previousFieldName).toLowerCase() === String(nextFieldName).toLowerCase()
+                ) {
+                  return;
+                }
+
+                const previousParentField = previousProps.parentFieldName || previousFieldName;
+                if (String(previousParentField).toLowerCase() !== String(previousFieldName).toLowerCase()) {
+                  return;
+                }
+
+                const nextProps = {
+                  ...previousProps,
+                  relationshipMode: "related",
+                  parentFieldName: nextFieldName,
+                };
+
+                updateReferenceProps(nextProps);
+                cleanupReferenceParentLink({
+                  ...previousProps,
+                  parentFieldName: previousParentField,
+                }, nextProps);
+                ensureReferenceParentLink({
+                  ...nextProps,
+                  sourceFieldName: nextFieldName,
+                });
+              },
             }),
           ),
         componentName === "Reference" &&
@@ -822,12 +898,14 @@
                 options: tableOptions,
                 value: node["x-component-props"]?.targetTableId ?? undefined,
                 onChange: (value) => {
+                  const previousProps = node["x-component-props"] || {};
                   const nextProps = {
-                    ...(node["x-component-props"] || {}),
+                    ...previousProps,
                     targetTableId: value ?? null,
-                    parentFieldName: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
+                    parentFieldName: previousProps.parentFieldName || node["x-field"] || "",
                   };
                   updateReferenceProps(nextProps);
+                  cleanupReferenceParentLink(previousProps, nextProps);
                   ensureReferenceParentLink(nextProps);
                 },
               }),
@@ -842,12 +920,14 @@
                   { label: "Related record mode", value: "related" },
                 ],
                 onChange: (value) => {
+                  const previousProps = node["x-component-props"] || {};
                   const nextProps = {
-                    ...(node["x-component-props"] || {}),
+                    ...previousProps,
                     relationshipMode: value,
-                    parentFieldName: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
+                    parentFieldName: previousProps.parentFieldName || node["x-field"] || "",
                   };
                   updateReferenceProps(nextProps);
+                  cleanupReferenceParentLink(previousProps, nextProps);
                   ensureReferenceParentLink(nextProps);
                 },
               }),
@@ -859,16 +939,25 @@
                 h(Input, {
                   value: node["x-component-props"]?.parentFieldName || node["x-field"] || "",
                   placeholder: node["x-field"] || "Parent id field on target table",
+                  onFocus: () => {
+                    parentLinkEditStartPropsRef.current = node["x-component-props"] || {};
+                  },
                   onChange: (event) => updateReferenceProps({
                     ...(node["x-component-props"] || {}),
                     relationshipMode: "related",
                     parentFieldName: event.target.value,
                   }),
-                  onBlur: (event) => ensureReferenceParentLink({
-                    ...(node["x-component-props"] || {}),
-                    relationshipMode: "related",
-                    parentFieldName: event.target.value,
-                  }),
+                  onBlur: (event) => {
+                    const previousProps = parentLinkEditStartPropsRef.current || node["x-component-props"] || {};
+                    const nextProps = {
+                      ...(node["x-component-props"] || previousProps),
+                      relationshipMode: "related",
+                      parentFieldName: event.target.value,
+                    };
+                    parentLinkEditStartPropsRef.current = null;
+                    cleanupReferenceParentLink(previousProps, nextProps);
+                    ensureReferenceParentLink(nextProps);
+                  },
                 }),
               ),
             h(Typography.Text, { type: "secondary" }, "Display defaults to the target record id."),

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using System.Text.Json;
 using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
@@ -137,6 +138,12 @@ public class ColumnsController : ControllerBase
 
         await _schemaMetadataSyncService.SyncTableAsync(tableId);
 
+        var createdLinkTableIds = await SyncReferenceParentLinkAsync(column, null);
+        foreach (var affectedTableId in createdLinkTableIds.Distinct())
+        {
+            await _schemaMetadataSyncService.SyncTableAsync(affectedTableId);
+        }
+
         return CreatedAtAction(nameof(GetColumns), new { tableId }, new ColumnResponseDto
         {
             Id = column.Id,
@@ -145,6 +152,7 @@ public class ColumnsController : ControllerBase
             IsRequired = column.IsRequired,
             TableId = column.TableId,
             IsInherited = false,
+            ComponentPropsJson = column.ComponentPropsJson,
             CreatedAt = column.CreatedAt
         });
     }
@@ -161,6 +169,7 @@ public class ColumnsController : ControllerBase
             return NotFound();
 
         var oldName = column.Name;
+        var oldReferenceLink = GetReferenceLinkConfig(column);
         var newName = dto.Name?.Trim();
         var nameChanged = !string.IsNullOrWhiteSpace(newName) &&
             !string.Equals(oldName, newName, StringComparison.Ordinal);
@@ -197,7 +206,7 @@ public class ColumnsController : ControllerBase
             column.IsRequired = dto.IsRequired.Value;
 
         if (dto.ComponentPropsJson is not null)
-            column.ComponentPropsJson = dto.ComponentPropsJson;
+            column.ComponentPropsJson = NormalizeReferencePropsForColumnUpdate(dto.ComponentPropsJson, oldReferenceLink, oldName, column.Name);
 
         try
         {
@@ -211,6 +220,13 @@ public class ColumnsController : ControllerBase
 
         _context.Columns.Update(column);
         await _context.SaveChangesAsync();
+
+        var affectedLinkTableIds = await SyncReferenceParentLinkAsync(column, oldReferenceLink);
+        foreach (var affectedTableId in affectedLinkTableIds.Distinct())
+        {
+            await _schemaMetadataSyncService.SyncTableAsync(affectedTableId);
+        }
+
         await _schemaMetadataSyncService.SyncColumnUpdatedAsync(tableId, nameChanged ? oldName : null, nameChanged ? column.Name : null);
 
         return NoContent();
@@ -227,6 +243,7 @@ public class ColumnsController : ControllerBase
         if (column == null)
             return NotFound();
 
+        var oldReferenceLink = GetReferenceLinkConfig(column);
         var table = await _context.Tables.FindAsync(tableId);
         if (table == null)
             return NotFound();
@@ -244,9 +261,318 @@ public class ColumnsController : ControllerBase
         var deletedColumnName = column.Name;
         _context.Columns.Remove(column);
         await _context.SaveChangesAsync();
+
+        var affectedLinkTableIds = await CleanupReferenceParentLinkAsync(oldReferenceLink, column.Id);
+        foreach (var affectedTableId in affectedLinkTableIds.Distinct())
+        {
+            await _schemaMetadataSyncService.SyncTableAsync(affectedTableId);
+        }
+
         await _schemaMetadataSyncService.SyncColumnDeletedAsync(tableId, deletedColumnName);
 
         return NoContent();
+    }
+
+    private async Task<List<int>> SyncReferenceParentLinkAsync(Column column, ReferenceLinkConfig? oldConfig)
+    {
+        var affectedTableIds = new List<int>();
+        var newConfig = GetReferenceLinkConfig(column);
+
+        if (oldConfig?.IsValid == true && newConfig?.IsValid == true)
+        {
+            var sameTarget = oldConfig.TargetTableId == newConfig.TargetTableId;
+            var sameParentField = string.Equals(oldConfig.ParentFieldName, newConfig.ParentFieldName, StringComparison.OrdinalIgnoreCase);
+
+            if (sameTarget && !sameParentField)
+            {
+                var renamed = await RenameReferenceParentLinkAsync(oldConfig, newConfig, column.Id);
+                if (renamed)
+                    affectedTableIds.Add(newConfig.TargetTableId!.Value);
+                else
+                    affectedTableIds.AddRange(await CleanupReferenceParentLinkAsync(oldConfig, column.Id));
+            }
+            else if (!sameTarget)
+            {
+                affectedTableIds.AddRange(await CleanupReferenceParentLinkAsync(oldConfig, column.Id));
+            }
+        }
+        else if (oldConfig?.IsValid == true)
+        {
+            affectedTableIds.AddRange(await CleanupReferenceParentLinkAsync(oldConfig, column.Id));
+        }
+
+        if (newConfig?.IsValid == true)
+        {
+            var ensured = await EnsureReferenceParentLinkColumnAsync(newConfig);
+            if (ensured)
+                affectedTableIds.Add(newConfig.TargetTableId!.Value);
+        }
+
+        return affectedTableIds.Distinct().ToList();
+    }
+
+    private async Task<List<int>> CleanupReferenceParentLinkAsync(ReferenceLinkConfig? config, int owningColumnId)
+    {
+        if (config?.IsValid != true)
+            return new List<int>();
+
+        if (await IsParentLinkUsedByAnotherReferenceAsync(config, owningColumnId))
+            return new List<int>();
+
+        var linkColumn = await FindParentLinkColumnAsync(config);
+        if (linkColumn == null)
+            return new List<int>();
+
+        try
+        {
+            await _dynamicTableService.DropColumnFromTableAndDescendantsAsync(linkColumn);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error dropping related-record parent link column '{ColumnName}' from target table ID {TableId}", linkColumn.Name, config.TargetTableId);
+            throw;
+        }
+
+        _context.Columns.Remove(linkColumn);
+        await _context.SaveChangesAsync();
+        return new List<int> { config.TargetTableId!.Value };
+    }
+
+    private async Task<bool> RenameReferenceParentLinkAsync(ReferenceLinkConfig oldConfig, ReferenceLinkConfig newConfig, int owningColumnId)
+    {
+        if (oldConfig.TargetTableId != newConfig.TargetTableId ||
+            oldConfig.ParentFieldName == null ||
+            newConfig.ParentFieldName == null ||
+            await IsParentLinkUsedByAnotherReferenceAsync(oldConfig, owningColumnId))
+        {
+            return false;
+        }
+
+        var oldLinkColumn = await FindParentLinkColumnAsync(oldConfig);
+        if (oldLinkColumn == null)
+            return false;
+
+        var existingNewColumn = await _context.Columns
+            .FirstOrDefaultAsync(c => c.TableId == newConfig.TargetTableId &&
+                c.Name.ToLower() == newConfig.ParentFieldName.ToLower());
+        if (existingNewColumn != null && existingNewColumn.Id != oldLinkColumn.Id)
+            return false;
+
+        var oldName = oldLinkColumn.Name;
+        oldLinkColumn.Name = newConfig.ParentFieldName;
+        oldLinkColumn.FieldType = "number";
+        oldLinkColumn.IsRequired = false;
+        oldLinkColumn.ComponentPropsJson = BuildParentLinkPropsJson();
+
+        await _dynamicTableService.UpdateColumnInTableAndDescendantsAsync(oldLinkColumn, oldName);
+        _context.Columns.Update(oldLinkColumn);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<bool> EnsureReferenceParentLinkColumnAsync(ReferenceLinkConfig config)
+    {
+        var linkColumn = await _context.Columns
+            .FirstOrDefaultAsync(c => c.TableId == config.TargetTableId &&
+                c.Name.ToLower() == config.ParentFieldName!.ToLower());
+
+        if (linkColumn == null)
+        {
+            linkColumn = new Column
+            {
+                Name = config.ParentFieldName!,
+                FieldType = "number",
+                TableId = config.TargetTableId!.Value,
+                IsRequired = false,
+                ComponentPropsJson = BuildParentLinkPropsJson()
+            };
+
+            _context.Columns.Add(linkColumn);
+            await _context.SaveChangesAsync();
+            await _dynamicTableService.AddColumnToTableAndDescendantsAsync(linkColumn);
+            return true;
+        }
+
+        if (linkColumn.FieldType.Equals("number", StringComparison.OrdinalIgnoreCase) &&
+            !linkColumn.IsRequired &&
+            IsParentLinkColumn(linkColumn))
+        {
+            return false;
+        }
+
+        var oldName = linkColumn.Name;
+        linkColumn.FieldType = "number";
+        linkColumn.IsRequired = false;
+        linkColumn.ComponentPropsJson = BuildParentLinkPropsJson();
+
+        await _dynamicTableService.UpdateColumnInTableAndDescendantsAsync(linkColumn, oldName);
+        _context.Columns.Update(linkColumn);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<Column?> FindParentLinkColumnAsync(ReferenceLinkConfig config)
+    {
+        if (config.TargetTableId == null || string.IsNullOrWhiteSpace(config.ParentFieldName))
+            return null;
+
+        var columnName = config.ParentFieldName.ToLower();
+        var candidates = await _context.Columns
+            .Where(c => c.TableId == config.TargetTableId &&
+                c.Name.ToLower() == columnName)
+            .ToListAsync();
+
+        return candidates.FirstOrDefault(IsParentLinkColumn);
+    }
+
+    private async Task<bool> IsParentLinkUsedByAnotherReferenceAsync(ReferenceLinkConfig config, int owningColumnId)
+    {
+        if (config.TargetTableId == null || string.IsNullOrWhiteSpace(config.ParentFieldName))
+            return false;
+
+        var referenceColumns = await _context.Columns
+            .Where(c => c.Id != owningColumnId && c.FieldType.ToLower() == "reference")
+            .ToListAsync();
+
+        return referenceColumns.Any(column =>
+        {
+            var otherConfig = GetReferenceLinkConfig(column);
+            return otherConfig?.IsValid == true &&
+                otherConfig.TargetTableId == config.TargetTableId &&
+                string.Equals(otherConfig.ParentFieldName, config.ParentFieldName, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    private static ReferenceLinkConfig? GetReferenceLinkConfig(Column column)
+    {
+        if (!column.FieldType.Equals("reference", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return GetReferenceLinkConfig(column.ComponentPropsJson, column.Name);
+    }
+
+    private static ReferenceLinkConfig? GetReferenceLinkConfig(string? componentPropsJson, string fallbackParentFieldName)
+    {
+        if (string.IsNullOrWhiteSpace(componentPropsJson))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(componentPropsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            var mode = GetStringProperty(document.RootElement, "relationshipMode");
+            if (!string.Equals(mode, "related", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var targetTableId = GetIntProperty(document.RootElement, "targetTableId");
+            var parentFieldName = GetStringProperty(document.RootElement, "parentFieldName");
+            if (string.IsNullOrWhiteSpace(parentFieldName))
+                parentFieldName = fallbackParentFieldName;
+
+            return new ReferenceLinkConfig(targetTableId, parentFieldName?.Trim());
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeReferencePropsForColumnUpdate(
+        string componentPropsJson,
+        ReferenceLinkConfig? oldReferenceLink,
+        string oldColumnName,
+        string newColumnName)
+    {
+        if (string.Equals(oldColumnName, newColumnName, StringComparison.OrdinalIgnoreCase) ||
+            oldReferenceLink?.IsValid != true)
+        {
+            return componentPropsJson;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(componentPropsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return componentPropsJson;
+
+            var values = JsonSerializer.Deserialize<Dictionary<string, object?>>(componentPropsJson);
+            if (values == null)
+                return componentPropsJson;
+
+            var nextConfig = GetReferenceLinkConfig(componentPropsJson, newColumnName);
+            if (nextConfig?.IsValid == true &&
+                string.Equals(nextConfig.ParentFieldName, oldColumnName, StringComparison.OrdinalIgnoreCase))
+            {
+                values["parentFieldName"] = newColumnName;
+                return JsonSerializer.Serialize(values);
+            }
+        }
+        catch (JsonException)
+        {
+            return componentPropsJson;
+        }
+
+        return componentPropsJson;
+    }
+
+    private static bool IsParentLinkColumn(Column column)
+    {
+        if (string.IsNullOrWhiteSpace(column.ComponentPropsJson))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(column.ComponentPropsJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                string.Equals(GetStringProperty(document.RootElement, "type"), "parent-link", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string BuildParentLinkPropsJson()
+    {
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["type"] = "parent-link",
+            ["hiddenInForms"] = true
+        });
+    }
+
+    private static string? GetStringProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+            return null;
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetRawText(),
+            _ => null
+        };
+    }
+
+    private static int? GetIntProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+            return null;
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number))
+            return number;
+
+        if (property.ValueKind == JsonValueKind.String && int.TryParse(property.GetString(), out var stringNumber))
+            return stringNumber;
+
+        return null;
+    }
+
+    private sealed record ReferenceLinkConfig(int? TargetTableId, string? ParentFieldName)
+    {
+        public bool IsValid => TargetTableId.HasValue && !string.IsNullOrWhiteSpace(ParentFieldName);
     }
 
     private static List<Column> GetEffectiveColumns(Table table, IReadOnlyDictionary<int, Table> tableMap)
