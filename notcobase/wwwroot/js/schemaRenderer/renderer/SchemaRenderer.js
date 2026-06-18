@@ -59,6 +59,10 @@
       props.placeholder = props.placeholder || schema.placeholder || (schema.title ? `Select ${schema.title}` : undefined);
     }
 
+    if (componentName === "Select") {
+      props.runtimeFormValues = context.runtimeFormValues || {};
+    }
+
     if (componentName === "Reference") {
       props.sourceFieldName = props.sourceFieldName || schema["x-field"] || context.name;
       if (props.relationshipMode === "related" && !props.parentFieldName) {
@@ -258,6 +262,10 @@
 
     if (componentName === "Form") {
       return h(Component, props, childNodes);
+    }
+
+    if (componentName === "Select" && props.optionMode === "dynamic" && window.Notcobase.DynamicSelectField?.DynamicSelect) {
+      return h(window.Notcobase.DynamicSelectField.DynamicSelect, props);
     }
 
     if (SchemaUtils.isContainerNode(schema) || childNodes.length > 0) {

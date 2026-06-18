@@ -136,6 +136,182 @@
     );
   }
 
+  function collectFieldOptions(schema, selectedNodeId) {
+    const options = [];
+
+    function visit(node, key) {
+      if (!node || typeof node !== "object") {
+        return;
+      }
+
+      if (node.id !== selectedNodeId && !node["x-hidden"] && node["x-component-props"]?.hiddenInForms !== true) {
+        const componentName = SchemaUtils.inferComponent(node);
+        const fieldName = node["x-field"] || node.name || key;
+        if (fieldName && !SchemaUtils.isBlockComponent(componentName) && !SchemaUtils.isContainerNode(node)) {
+          options.push({
+            label: `${node.title || fieldName} (${fieldName})`,
+            value: fieldName,
+          });
+        }
+      }
+
+      SchemaUtils.sortSchemaEntries(node.properties).forEach(([childKey, child]) => visit(child, childKey));
+    }
+
+    visit(schema, schema?.name || "root");
+    return options;
+  }
+
+  function DynamicOptionsConfig({ node, schema, selectedNodeId, tableOptions, onPropsChange }) {
+    const props = node["x-component-props"] || {};
+    const sourceTableId = props.sourceTableId;
+    const [tableDetails, setTableDetails] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+      if (!sourceTableId) {
+        setTableDetails(null);
+        setError("");
+        return;
+      }
+
+      let cancelled = false;
+      setLoading(true);
+      setError("");
+
+      TablesApi.get(sourceTableId)
+        .then((details) => {
+          if (!cancelled) {
+            setTableDetails(details);
+          }
+        })
+        .catch((loadError) => {
+          if (!cancelled) {
+            setError(loadError.message || "Failed to load source columns");
+            setTableDetails(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [sourceTableId]);
+
+    const columnOptions = [
+      { label: "Record ID (id)", value: "id" },
+      ...BlockUtils.getVisibleColumns(tableDetails?.columns || []).map((column) => ({
+        label: `${column.name} (${column.fieldType || "text"})`,
+        value: column.name,
+      })),
+    ];
+    const fieldOptions = collectFieldOptions(schema, selectedNodeId);
+
+    function update(nextProps) {
+      onPropsChange({
+        ...(node["x-component-props"] || {}),
+        ...nextProps,
+      });
+    }
+
+    return h(
+      React.Fragment,
+      null,
+      h(Divider, { orientation: "left", plain: true }, "Selection options"),
+      h(
+        Form.Item,
+        { label: "Mode" },
+        h(Select, {
+          value: props.optionMode || "static",
+          options: [
+            { label: "Static Options", value: "static" },
+            { label: "Dynamic Options", value: "dynamic" },
+          ],
+          onChange: (value) => update({ optionMode: value }),
+        }),
+      ),
+      (props.optionMode === "dynamic") &&
+        h(
+          React.Fragment,
+          null,
+          h(
+            Form.Item,
+            { label: "Source Table" },
+            h(Select, {
+              allowClear: true,
+              showSearch: true,
+              options: tableOptions,
+              value: props.sourceTableId ?? undefined,
+              onChange: (value) => update({
+                sourceTableId: value ?? null,
+                displayColumn: "id",
+                valueColumn: "id",
+                filterField: "",
+              }),
+            }),
+          ),
+          loading && h(Typography.Text, { type: "secondary" }, "Loading source columns..."),
+          error && h(Alert, { type: "error", showIcon: true, message: error }),
+          h(
+            Form.Item,
+            { label: "Display Column" },
+            h(Select, {
+              disabled: !sourceTableId,
+              options: columnOptions,
+              value: props.displayColumn || "id",
+              onChange: (value) => update({ displayColumn: value }),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Value Column" },
+            h(Select, {
+              disabled: !sourceTableId,
+              options: columnOptions,
+              value: props.valueColumn || "id",
+              onChange: (value) => update({ valueColumn: value }),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Depends On Field" },
+            h(Select, {
+              allowClear: true,
+              showSearch: true,
+              options: fieldOptions,
+              value: props.dependsOnField || undefined,
+              onChange: (value) => update({ dependsOnField: value || "", filterField: value ? props.filterField || "" : "" }),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Filter Field" },
+            h(Select, {
+              allowClear: true,
+              disabled: !sourceTableId || !props.dependsOnField,
+              options: columnOptions,
+              value: props.filterField || undefined,
+              onChange: (value) => update({ filterField: value || "" }),
+            }),
+          ),
+          h(
+            Form.Item,
+            { label: "Empty Parent Placeholder" },
+            h(Input, {
+              value: props.emptyDependencyPlaceholder || "",
+              placeholder: "Select a parent value first",
+              onChange: (event) => update({ emptyDependencyPlaceholder: event.target.value }),
+            }),
+          ),
+        ),
+    );
+  }
+
   function BlockConfigFields({
     node,
     componentName,
@@ -697,6 +873,18 @@
               ),
             h(Typography.Text, { type: "secondary" }, "Display defaults to the target record id."),
           ),
+        componentName === "Select" &&
+          h(DynamicOptionsConfig, {
+            node,
+            schema,
+            selectedNodeId,
+            tableOptions,
+            onPropsChange: (nextProps) => updateSelectedNode((draft) => {
+              draft["x-component-props"] = nextProps;
+              setPropsText(JSON.stringify(nextProps, null, 2));
+              return draft;
+            }),
+          }),
         (componentName === "Button" || componentName === "Action") &&
           h(
             React.Fragment,

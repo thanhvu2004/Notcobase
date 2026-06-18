@@ -76,7 +76,15 @@
         return h(Input, { ...common, type: "url" });
       case "select":
         {
-          const options = Array.isArray(componentProps.options)
+          if (componentProps.optionMode === "dynamic" && window.Notcobase.DynamicSelectField?.DynamicSelect) {
+            return h(window.Notcobase.DynamicSelectField.DynamicSelect, {
+              ...common,
+              ...componentProps,
+              runtimeFormValues: options.formValues || {},
+            });
+          }
+
+          const selectOptions = Array.isArray(componentProps.options)
             ? componentProps.options.map((option) => {
                 if (typeof option === "object") {
                   return option;
@@ -91,7 +99,7 @@
 
           return h(Select, {
             ...common,
-            options,
+            options: selectOptions,
             allowClear: true,
             style: { width: "100%" },
           });
@@ -323,7 +331,7 @@
           rules: field.required ? [{ required: true, message: `${field.label} is required` }] : [],
           valuePropName: getFieldValuePropName(field),
         },
-        renderFieldInput(field),
+        renderFieldInput(field, { formValues: typeof form?.getFieldsValue === "function" ? form.getFieldsValue(true) : {} }),
       ),
     );
 
@@ -660,6 +668,10 @@
             component: false,
             layout: config.layout || "vertical",
             disabled: designer || config.allowEdit === false,
+            onValuesChange: (_, allValues) => {
+              context.refreshVisibility?.(BlockUtils.addFieldValueAliases(schema, allValues));
+              forceVisibilityRefresh((value) => value + 1);
+            },
           },
           children,
         ),
@@ -899,10 +911,10 @@
             disabled: isView,
             // disabled: designer,
             onValuesChange: (_, allValues) => {
-              const mergedValues = {
+              const mergedValues = BlockUtils.addFieldValueAliases(schema, {
                 ...(context.runtimeFormValues || {}),
                 ...allValues,
-              };
+              });
               formGroup?.setValues(allValues, form);
               context.refreshVisibility?.(mergedValues);
               forceVisibilityRefresh((value) => value + 1);
@@ -950,6 +962,7 @@
     const [hiddenColumns, setHiddenColumns] = useState({});
     const [showColumnManager, setShowColumnManager] = useState(false);
     const [activeMenu, setActiveMenu] = useState(null);
+    const [, forceModalFormRefresh] = useState(0);
     const designer = isDesignerMode(context);
 
     const formFields = useMemo(
@@ -1612,7 +1625,11 @@
           formFields.length
             ? h(
               Form,
-              { form, layout: "vertical" },
+              {
+                form,
+                layout: "vertical",
+                onValuesChange: () => forceModalFormRefresh((value) => value + 1),
+              },
               formFields.map((field) =>
                 h(
                   Form.Item,
@@ -1630,6 +1647,7 @@
                   renderFieldInput(field, {
                     parentRecordId: editingRecord?.__recordId,
                     parentTableId: tableId,
+                    formValues: typeof form?.getFieldsValue === "function" ? form.getFieldsValue(true) : {},
                   }),
                 ),
               ),
