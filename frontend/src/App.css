@@ -63,12 +63,63 @@ input,
 select,
 textarea {
   width: 100%;
+  height: 2.25rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   background: #ffffff;
   color: #17202a;
   padding: 0.55rem 0.65rem;
 }
+
+input[type="checkbox"] {
+  margin-top: 0px
+}
+
+
+/* custom checkbox */
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px !important;
+  height: 18px;
+  border: 2px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: all 0.15s ease;
+}
+
+.custom-checkbox:hover {
+  border-color: #2563eb;
+}
+
+.custom-checkbox:checked {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.custom-checkbox::before {
+  content: "";
+  width: 5px;
+  height: 10px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.12s ease-in-out;
+  margin-top: -1px;
+}
+
+.custom-checkbox:checked::before {
+  transform: rotate(45deg) scale(1);
+}
+
+.custom-checkbox:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 0.25);
+  outline-offset: 2px;
+}
+
 
 textarea {
   resize: vertical;

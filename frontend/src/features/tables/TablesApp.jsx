@@ -144,7 +144,7 @@ function renderRecordInput(column, recordForm, setRecordForm) {
   if (type === 'checkbox') {
     return (
       <label className="check-row field-control">
-        <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} />
+        <input className='custom-checkbox' type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} />
         Checked
       </label>
     )
@@ -392,11 +392,6 @@ function FieldForm({ form, setForm, title, saving, tables, onSubmit, onReset }) 
     <form className="field-form panel-form" onSubmit={onSubmit}>
       <div className="field-form-header">
         <h3>{title}</h3>
-        {form.name && (
-          <button type="button" className="secondary" onClick={onReset}>
-            New field
-          </button>
-        )}
       </div>
         <label>
           Field name
@@ -416,7 +411,7 @@ function FieldForm({ form, setForm, title, saving, tables, onSubmit, onReset }) 
           </select>
         </label>
         <label className="check-row">
-          <input type="checkbox" checked={form.isRequired} onChange={(event) => setForm({ ...form, isRequired: event.target.checked })} />
+          <input  className='custom-checkbox' type="checkbox" checked={form.isRequired} onChange={(event) => setForm({ ...form, isRequired: event.target.checked })} />
           Required
         </label>
         {form.fieldType === 'select' && <SelectOptionsConfig form={form} setForm={setForm} />}
@@ -855,7 +850,6 @@ export default function TablesApp() {
         {!activeTable ? (
           <section className="empty-state">
             <h2>Select or create a table</h2>
-            <p>Tables created here are stored through the existing Notcobase API.</p>
           </section>
         ) : (
           <>
@@ -880,6 +874,7 @@ export default function TablesApp() {
             <div className="fields-layout">
               <section className="panel panel-short fields-panel">
                 <h3>Fields</h3>
+                <p className="muted">Drag and drop to reorder fields</p>
                 <div className="field-list compact-fields">
                   {columns.map((column) => (
                     <div
