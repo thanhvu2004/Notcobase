@@ -398,6 +398,7 @@ public class SchemaMetadataSyncService
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .OrderBy(c => c.TableId == table.Id ? 1 : 0)
+            .ThenBy(c => c.SortOrder)
             .ThenBy(c => c.Id)
             .ToList();
     }

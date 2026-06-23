@@ -9,6 +9,7 @@ import {
   deleteTable,
   fetchTableDetails,
   fetchTables,
+  reorderColumns,
   updateColumn,
   updateRecord,
   updateTable,
@@ -258,17 +259,155 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
   )
 }
 
-function FieldModal({ form, setForm, title, saving, onSubmit, onClose, onConfigure }) {
+function setFormProps(form, setForm, nextProps) {
+  setForm({
+    ...form,
+    componentPropsJson: JSON.stringify({ ...parseProps(form.componentPropsJson), ...nextProps }),
+  })
+}
+
+function SelectOptionsConfig({ form, setForm }) {
+  const props = parseProps(form.componentPropsJson)
+  const options = props.options || []
+  const defaultValue = props.defaultValue || ''
+  const [newOption, setNewOption] = useState('')
+
+  function updateOptions(nextOptions, nextDefaultValue = defaultValue) {
+    setFormProps(form, setForm, {
+      options: nextOptions,
+      defaultValue: nextOptions.includes(nextDefaultValue) ? nextDefaultValue : nextOptions[0] || '',
+    })
+  }
+
+  function addOption() {
+    const trimmed = newOption.trim()
+    if (!trimmed || options.includes(trimmed)) return
+    updateOptions([...options, trimmed], defaultValue || trimmed)
+    setNewOption('')
+  }
+
   return (
-    <Modal title={title} onClose={onClose}>
-      <form className="modal-form" onSubmit={onSubmit}>
+    <section className="field-config-panel">
+      <h4>Select options</h4>
+      <label>
+        Add option
+        <div className="inline-input">
+          <input
+            value={newOption}
+            onChange={(event) => setNewOption(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addOption())}
+          />
+          <button type="button" onClick={addOption}>
+            Add
+          </button>
+        </div>
+      </label>
+      <div className="list-stack">
+        {options.map((option, index) => (
+          <div key={`${option}-${index}`} className="option-row">
+            <input
+              type="radio"
+              name="defaultValue"
+              checked={defaultValue === option}
+              onChange={() => setFormProps(form, setForm, { defaultValue: option })}
+            />
+            <input
+              value={option}
+              onChange={(event) => {
+                const next = [...options]
+                next[index] = event.target.value
+                updateOptions(next, defaultValue === option ? event.target.value : defaultValue)
+              }}
+            />
+            <button type="button" className="danger" onClick={() => updateOptions(options.filter((_, itemIndex) => itemIndex !== index))}>
+              Remove
+            </button>
+          </div>
+        ))}
+        {options.length === 0 && <p className="muted">No options added yet.</p>}
+      </div>
+    </section>
+  )
+}
+
+function ReferenceConfig({ form, setForm, tables }) {
+  const props = parseProps(form.componentPropsJson)
+  const targetTableId = props.targetTableId ? String(props.targetTableId) : ''
+  const relationshipMode = props.relationshipMode === 'related' ? 'related' : 'lookup'
+  const parentFieldName = props.parentFieldName || form.name || ''
+
+  function updateReference(nextProps) {
+    const nextRelationshipMode = nextProps.relationshipMode || relationshipMode
+    const nextTargetTableId = Number(nextProps.targetTableId ?? targetTableId) || ''
+    setFormProps(form, setForm, {
+      type: 'reference',
+      displayColumnId: 'id',
+      ...nextProps,
+      targetTableId: nextTargetTableId,
+      relationshipMode: nextRelationshipMode,
+      parentFieldName:
+        nextRelationshipMode === 'related' ? nextProps.parentFieldName ?? parentFieldName : '',
+    })
+  }
+
+  return (
+    <section className="field-config-panel">
+      <h4>Reference settings</h4>
+      <label>
+        Target table
+        <select required value={targetTableId} onChange={(event) => updateReference({ targetTableId: event.target.value })}>
+          <option value="">Select table</option>
+          {tables.map((table) => (
+            <option key={table.id} value={table.id}>
+              {table.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Relationship mode
+        <select value={relationshipMode} onChange={(event) => updateReference({ relationshipMode: event.target.value })}>
+          <option value="lookup">Lookup mode</option>
+          <option value="related">Related record mode</option>
+        </select>
+      </label>
+      {relationshipMode === 'related' && (
+        <label>
+          Parent link field on target table
+          <input required value={parentFieldName} onChange={(event) => updateReference({ parentFieldName: event.target.value })} />
+        </label>
+      )}
+      <p className="muted">Display currently defaults to the target record ID.</p>
+    </section>
+  )
+}
+
+function FieldForm({ form, setForm, title, saving, tables, onSubmit, onReset }) {
+  const props = parseProps(form.componentPropsJson)
+  const referenceIsIncomplete =
+    form.fieldType === 'reference' &&
+    (!props.targetTableId || (props.relationshipMode === 'related' && !String(props.parentFieldName || '').trim()))
+
+  return (
+    <form className="field-form panel-form" onSubmit={onSubmit}>
+      <div className="field-form-header">
+        <h3>{title}</h3>
+        {form.name && (
+          <button type="button" className="secondary" onClick={onReset}>
+            New field
+          </button>
+        )}
+      </div>
         <label>
           Field name
           <input value={form.name} autoFocus required onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </label>
         <label>
           Field type
-          <select value={form.fieldType} onChange={(event) => setForm({ ...form, fieldType: event.target.value })}>
+          <select
+            value={form.fieldType}
+            onChange={(event) => setForm({ ...form, fieldType: event.target.value, componentPropsJson: '{}' })}
+          >
             {fieldTypes.map((type) => (
               <option key={type} value={type}>
                 {type}
@@ -280,26 +419,17 @@ function FieldModal({ form, setForm, title, saving, onSubmit, onClose, onConfigu
           <input type="checkbox" checked={form.isRequired} onChange={(event) => setForm({ ...form, isRequired: event.target.checked })} />
           Required
         </label>
-        {form.fieldType === 'select' && (
-          <button type="button" className="secondary" onClick={() => onConfigure('select')}>
-            Configure options
+        {form.fieldType === 'select' && <SelectOptionsConfig form={form} setForm={setForm} />}
+        {form.fieldType === 'reference' && <ReferenceConfig form={form} setForm={setForm} tables={tables} />}
+        <footer className="form-actions">
+          <button type="button" className="secondary" onClick={onReset}>
+            Clear
           </button>
-        )}
-        {form.fieldType === 'reference' && (
-          <button type="button" className="secondary" onClick={() => onConfigure('reference')}>
-            Configure reference
-          </button>
-        )}
-        <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" disabled={saving}>
+          <button type="submit" disabled={saving || referenceIsIncomplete}>
             {saving ? 'Saving...' : 'Save field'}
           </button>
         </footer>
       </form>
-    </Modal>
   )
 }
 
@@ -326,135 +456,6 @@ function RecordModal({ title, columns, form, setForm, saving, onSubmit, onClose 
           </button>
         </footer>
       </form>
-    </Modal>
-  )
-}
-
-function SelectOptionsModal({ form, setForm, onClose }) {
-  const props = parseProps(form.componentPropsJson)
-  const [options, setOptions] = useState(() => props.options || [])
-  const [defaultValue, setDefaultValue] = useState(() => props.defaultValue || '')
-  const [newOption, setNewOption] = useState('')
-
-  function addOption() {
-    const trimmed = newOption.trim()
-    if (!trimmed || options.includes(trimmed)) return
-    setOptions([...options, trimmed])
-    setNewOption('')
-    if (!defaultValue) setDefaultValue(trimmed)
-  }
-
-  function save() {
-    setForm({
-      ...form,
-      componentPropsJson: JSON.stringify({ ...props, options, defaultValue }),
-    })
-    onClose()
-  }
-
-  return (
-    <Modal title={`Configure "${form.name || 'select'}" options`} onClose={onClose}>
-      <div className="modal-form">
-        <label>
-          Add option
-          <div className="inline-input">
-            <input value={newOption} onChange={(event) => setNewOption(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addOption())} />
-            <button type="button" onClick={addOption}>
-              Add
-            </button>
-          </div>
-        </label>
-        <div className="list-stack">
-          {options.map((option, index) => (
-            <div key={`${option}-${index}`} className="option-row">
-              <input type="radio" name="defaultValue" checked={defaultValue === option} onChange={() => setDefaultValue(option)} />
-              <input
-                value={option}
-                onChange={(event) => {
-                  const next = [...options]
-                  next[index] = event.target.value
-                  setOptions(next)
-                  if (defaultValue === option) setDefaultValue(event.target.value)
-                }}
-              />
-              <button type="button" className="danger" onClick={() => setOptions(options.filter((_, itemIndex) => itemIndex !== index))}>
-                Remove
-              </button>
-            </div>
-          ))}
-          {options.length === 0 && <p className="muted">No options added yet.</p>}
-        </div>
-        <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" onClick={save}>
-            Save options
-          </button>
-        </footer>
-      </div>
-    </Modal>
-  )
-}
-
-function ReferenceConfigModal({ form, setForm, tables, onClose }) {
-  const props = parseProps(form.componentPropsJson)
-  const [targetTableId, setTargetTableId] = useState(props.targetTableId ? String(props.targetTableId) : '')
-  const [relationshipMode, setRelationshipMode] = useState(props.relationshipMode === 'related' ? 'related' : 'lookup')
-  const [parentFieldName, setParentFieldName] = useState(props.parentFieldName || form.name || '')
-
-  function save() {
-    setForm({
-      ...form,
-      componentPropsJson: JSON.stringify({
-        ...props,
-        type: 'reference',
-        targetTableId: Number(targetTableId),
-        displayColumnId: 'id',
-        relationshipMode,
-        parentFieldName: relationshipMode === 'related' ? parentFieldName.trim() : '',
-      }),
-    })
-    onClose()
-  }
-
-  return (
-    <Modal title={`Configure "${form.name || 'reference'}" reference`} onClose={onClose}>
-      <div className="modal-form">
-        <label>
-          Target table
-          <select required value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>
-            <option value="">Select table</option>
-            {tables.map((table) => (
-              <option key={table.id} value={table.id}>
-                {table.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Relationship mode
-          <select value={relationshipMode} onChange={(event) => setRelationshipMode(event.target.value)}>
-            <option value="lookup">Lookup mode</option>
-            <option value="related">Related record mode</option>
-          </select>
-        </label>
-        {relationshipMode === 'related' && (
-          <label>
-            Parent link field on target table
-            <input value={parentFieldName} required onChange={(event) => setParentFieldName(event.target.value)} />
-          </label>
-        )}
-        <p className="muted">Display currently defaults to the target record ID.</p>
-        <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" disabled={!targetTableId || (relationshipMode === 'related' && !parentFieldName.trim())} onClick={save}>
-            Save reference
-          </button>
-        </footer>
-      </div>
     </Modal>
   )
 }
@@ -505,7 +506,7 @@ function RecordsDataGrid({ columns, records, loading, onEditRecord, onDeleteReco
         ),
       },
     ],
-    [columns, onDeleteRecord, onEditRecord],
+    [columns, onDeleteRecord],
   )
 
   return (
@@ -538,7 +539,7 @@ export default function TablesApp() {
   const [recordForm, setRecordForm] = useState({})
   const [editingRecord, setEditingRecord] = useState(null)
   const [modal, setModal] = useState(null)
-  const [configModal, setConfigModal] = useState(null)
+  const [draggedColumnId, setDraggedColumnId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -563,6 +564,8 @@ export default function TablesApp() {
 
   async function loadTable(table) {
     setSelectedTable(table)
+    setEditingColumn(null)
+    setColumnForm(emptyColumnForm)
     setLoading(true)
     try {
       const details = await fetchTableDetails(table.id)
@@ -607,10 +610,9 @@ export default function TablesApp() {
     setModal('table')
   }
 
-  function openCreateField() {
+  function resetFieldForm() {
     setEditingColumn(null)
     setColumnForm(emptyColumnForm)
-    setModal('field')
   }
 
   function openEditField(column) {
@@ -621,7 +623,6 @@ export default function TablesApp() {
       isRequired: Boolean(column.isRequired),
       componentPropsJson: column.componentPropsJson || '{}',
     })
-    setModal('field')
   }
 
   function openCreateRecord() {
@@ -639,6 +640,45 @@ export default function TablesApp() {
       }, {}),
     )
     setModal('record')
+  }
+
+  async function handleReorderColumn(targetColumn) {
+    if (!activeTable || !draggedColumnId || draggedColumnId === targetColumn.id || targetColumn.isInherited) return
+
+    const draggedColumn = columns.find((column) => column.id === draggedColumnId)
+    if (!draggedColumn || draggedColumn.isInherited) return
+
+    const previousColumns = columns
+    const ownColumns = columns.filter((column) => !column.isInherited)
+    const fromIndex = ownColumns.findIndex((column) => column.id === draggedColumnId)
+    const toIndex = ownColumns.findIndex((column) => column.id === targetColumn.id)
+
+    if (fromIndex < 0 || toIndex < 0) return
+
+    const reorderedOwnColumns = [...ownColumns]
+    const [movedColumn] = reorderedOwnColumns.splice(fromIndex, 1)
+    reorderedOwnColumns.splice(toIndex, 0, movedColumn)
+
+    let nextOwnColumnIndex = 0
+    const nextColumns = columns.map((column) => {
+      if (column.isInherited) return column
+      const nextColumn = reorderedOwnColumns[nextOwnColumnIndex]
+      nextOwnColumnIndex += 1
+      return nextColumn
+    })
+
+    setColumns(nextColumns)
+    setDraggedColumnId(null)
+
+    try {
+      await reorderColumns(activeTable.id, reorderedOwnColumns.map((column) => column.id))
+      await refreshActiveTable()
+      broadcastSchemaMetadataChanged(activeTable.id)
+      setError('')
+    } catch (err) {
+      setColumns(previousColumns)
+      setError(err.message)
+    }
   }
 
   async function handleSaveTable(event) {
@@ -708,49 +748,15 @@ export default function TablesApp() {
     setSaving(true)
     try {
       await ensureParentLinkColumn(payload)
-      const savedColumn = editingColumn
-        ? (await updateColumn(activeTable.id, editingColumn.id, payload), { ...editingColumn, ...payload })
-        : await createColumn(activeTable.id, payload)
+      if (editingColumn) await updateColumn(activeTable.id, editingColumn.id, payload)
+      else await createColumn(activeTable.id, payload)
 
-      setModal(null)
       setEditingColumn(null)
       setColumnForm(emptyColumnForm)
       await refreshActiveTable()
       broadcastSchemaMetadataChanged(activeTable.id)
 
-      if (!editingColumn && savedColumn.fieldType === 'select' && payload.componentPropsJson === '{}') {
-        setColumnForm({ ...emptyColumnForm, ...savedColumn })
-        setConfigModal('select')
-      }
-
-      if (!editingColumn && savedColumn.fieldType === 'reference' && payload.componentPropsJson === '{}') {
-        setColumnForm({ ...emptyColumnForm, ...savedColumn })
-        setConfigModal('reference')
-      }
-
       setError('')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleSaveConfiguredColumn(nextColumnForm) {
-    if (!activeTable || !nextColumnForm.id) return
-    setSaving(true)
-    try {
-      await ensureParentLinkColumn(nextColumnForm)
-      await updateColumn(activeTable.id, nextColumnForm.id, {
-        name: nextColumnForm.name,
-        fieldType: nextColumnForm.fieldType,
-        isRequired: nextColumnForm.isRequired,
-        componentPropsJson: nextColumnForm.componentPropsJson,
-      })
-      setConfigModal(null)
-      setColumnForm(emptyColumnForm)
-      await refreshActiveTable()
-      broadcastSchemaMetadataChanged(activeTable.id)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -817,7 +823,7 @@ export default function TablesApp() {
       <aside className="sidebar">
         <div className="brand-row">
           <h1>Notcobase</h1>
-          <button type="button" onClick={loadTables} disabled={loading}>
+          <button type="button" onClick={loadTables} disabled={loading} className="outline">
             Refresh
           </button>
         </div>
@@ -859,9 +865,6 @@ export default function TablesApp() {
                 <p>{activeTable.description || 'No description'}</p>
               </div>
               <div className="button-row">
-                <button type="button" onClick={openCreateField}>
-                  Add field
-                </button>
                 <button type="button" onClick={openCreateRecord} disabled={getVisibleFormColumns(columns).length === 0}>
                   Add record
                 </button>
@@ -874,37 +877,70 @@ export default function TablesApp() {
               </div>
             </header>
 
-            <section className="panel panel-short fields-panel">
-              <h3>Fields</h3>
-              <div className="field-list compact-fields">
-                {columns.map((column) => (
-                  <div key={column.id} className="field-row">
-                    <div>
-                      <strong>{column.name}</strong>
+            <div className="fields-layout">
+              <section className="panel panel-short fields-panel">
+                <h3>Fields</h3>
+                <div className="field-list compact-fields">
+                  {columns.map((column) => (
+                    <div
+                      key={column.id}
+                      className={draggedColumnId === column.id ? 'field-row dragging' : 'field-row'}
+                      draggable={!column.isInherited}
+                      onDragStart={(event) => {
+                        if (column.isInherited) return
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', String(column.id))
+                        setDraggedColumnId(column.id)
+                      }}
+                      onDragOver={(event) => {
+                        if (!column.isInherited && draggedColumnId && draggedColumnId !== column.id) {
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'move'
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        handleReorderColumn(column)
+                      }}
+                      onDragEnd={() => setDraggedColumnId(null)}
+                    >
                       <div>
-                        <span>
-                          {column.fieldType || 'text'}
-                          <span style={{ color: 'red' }}>{column.isRequired ? ' *' : ''}</span>
-                          {column.isInherited ? ' inherited' : ''}
-                          {isHiddenColumn(column) ? ' hidden' : ''}
-                        </span>
+                        <strong>{column.name}</strong>
+                        <div>
+                          <span>
+                            {column.fieldType || 'text'}
+                            <span style={{ color: 'red' }}>{column.isRequired ? ' *' : ''}</span>
+                            {column.isInherited ? ' inherited' : ''}
+                            {isHiddenColumn(column) ? ' hidden' : ''}
+                          </span>
+                        </div>
                       </div>
+                      {!column.isInherited && (
+                        <div className="button-row compact">
+                          <button type="button" className="secondary" onClick={() => openEditField(column)}>
+                            Edit
+                          </button>
+                          <button type="button" className="danger" onClick={() => handleDeleteColumn(column)}>
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    {!column.isInherited && (
-                      <div className="button-row compact">
-                        <button type="button" className="secondary" onClick={() => openEditField(column)}>
-                          Edit
-                        </button>
-                        <button type="button" className="danger" onClick={() => handleDeleteColumn(column)}>
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {columns.length === 0 && <p className="muted">Add a field before creating records.</p>}
-              </div>
-            </section>
+                  ))}
+                  {columns.length === 0 && <p className="muted">Add a field before creating records.</p>}
+                </div>
+              </section>
+
+              <FieldForm
+                title={editingColumn ? `Edit field ${editingColumn.name}` : 'Add field'}
+                form={columnForm}
+                setForm={setColumnForm}
+                tables={tables}
+                saving={saving}
+                onSubmit={handleSaveColumn}
+                onReset={resetFieldForm}
+              />
+            </div>
 
             <section className="records-section">
               <div className="records-toolbar">
@@ -936,17 +972,6 @@ export default function TablesApp() {
           onClose={() => setModal(null)}
         />
       )}
-      {modal === 'field' && (
-        <FieldModal
-          title={editingColumn ? `Edit field ${editingColumn.name}` : 'Add field'}
-          form={columnForm}
-          setForm={setColumnForm}
-          saving={saving}
-          onSubmit={handleSaveColumn}
-          onClose={() => setModal(null)}
-          onConfigure={setConfigModal}
-        />
-      )}
       {modal === 'record' && (
         <RecordModal
           title={editingRecord ? `Edit record #${editingRecord.id}` : `Add record to ${activeTable?.name}`}
@@ -956,27 +981,6 @@ export default function TablesApp() {
           saving={saving}
           onSubmit={handleSaveRecord}
           onClose={() => setModal(null)}
-        />
-      )}
-      {configModal === 'select' && (
-        <SelectOptionsModal
-          form={columnForm}
-          setForm={(nextForm) => {
-            setColumnForm(nextForm)
-            if (nextForm.id) handleSaveConfiguredColumn(nextForm)
-          }}
-          onClose={() => setConfigModal(null)}
-        />
-      )}
-      {configModal === 'reference' && (
-        <ReferenceConfigModal
-          form={columnForm}
-          setForm={(nextForm) => {
-            setColumnForm(nextForm)
-            if (nextForm.id) handleSaveConfiguredColumn(nextForm)
-          }}
-          tables={tables}
-          onClose={() => setConfigModal(null)}
         />
       )}
     </div>

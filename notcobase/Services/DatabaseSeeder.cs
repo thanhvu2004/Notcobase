@@ -19,6 +19,7 @@ public class DatabaseSeeder
     public async Task SeedAsync()
     {
         await _context.Database.MigrateAsync();
+        await EnsureColumnSortOrderSchemaAsync();
         // Create permissions if they don't exist
         var permissions = new[]
         {
@@ -120,5 +121,33 @@ public class DatabaseSeeder
         }
 
         await _metadataSeeder.SeedAsync();
+    }
+
+    private async Task EnsureColumnSortOrderSchemaAsync()
+    {
+        var connection = _context.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldClose)
+            await connection.OpenAsync();
+
+        try
+        {
+            await using var checkCommand = connection.CreateCommand();
+            checkCommand.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Columns') WHERE name = 'SortOrder'";
+            var hasSortOrder = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
+
+            if (hasSortOrder)
+                return;
+
+            await _context.Database.ExecuteSqlRawAsync("ALTER TABLE Columns ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0");
+            await _context.Database.ExecuteSqlRawAsync("UPDATE Columns SET SortOrder = Id WHERE SortOrder = 0");
+            await _context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_Columns_TableId_SortOrder ON Columns (TableId, SortOrder)");
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
     }
 }

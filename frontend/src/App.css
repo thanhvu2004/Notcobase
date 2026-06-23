@@ -43,9 +43,20 @@ button.secondary {
   color: #1f2937;
 }
 
+button.outline {
+  border-color: #2563eb;
+  background: none;
+  color: #2563eb;
+}
+
 button.danger {
   border-color: #dc2626;
-  background: #dc2626;
+  background: none;
+  color: #dc2626;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.50;
 }
 
 input,
@@ -426,6 +437,18 @@ label {
   padding-bottom: 0.65rem;
 }
 
+.field-row[draggable="true"] {
+  cursor: grab;
+}
+
+.field-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.field-row.dragging {
+  opacity: 0.45;
+}
+
 .field-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
@@ -534,8 +557,48 @@ th {
   margin-bottom: 1rem;
 }
 
+.fields-layout {
+  display: grid;
+  align-items: start;
+  grid-template-columns: minmax(280px, 1fr) minmax(300px, 420px);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .compact-fields {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: 1fr;
+}
+
+.field-form {
+  top: 5rem;
+}
+
+.field-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.field-config-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.85rem;
+}
+
+.field-config-panel h4 {
+  margin: 0;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.85rem;
 }
 
 .required-mark {
@@ -622,9 +685,14 @@ th {
 
 @media (max-width: 860px) {
   .app-shell,
+  .fields-layout,
   .grid-two,
   .top-nav {
     grid-template-columns: 1fr;
+  }
+
+  .field-form {
+    position: static;
   }
 
   .sidebar {

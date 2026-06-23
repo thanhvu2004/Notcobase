@@ -58,6 +58,7 @@ public class ColumnsController : ControllerBase
                 IsRequired = c.IsRequired,
                 TableId = c.TableId,
                 IsInherited = c.TableId != tableId,
+                SortOrder = c.SortOrder,
                 ComponentPropsJson = c.ComponentPropsJson,
                 CreatedAt = c.CreatedAt
             })
@@ -102,6 +103,7 @@ public class ColumnsController : ControllerBase
             FieldType = dto.FieldType,
             TableId = tableId,
             IsRequired = dto.IsRequired,
+            SortOrder = await GetNextSortOrderAsync(tableId),
             ComponentPropsJson = dto.ComponentPropsJson ?? "{}"
         };
 
@@ -152,9 +154,50 @@ public class ColumnsController : ControllerBase
             IsRequired = column.IsRequired,
             TableId = column.TableId,
             IsInherited = false,
+            SortOrder = column.SortOrder,
             ComponentPropsJson = column.ComponentPropsJson,
             CreatedAt = column.CreatedAt
         });
+    }
+
+    /// Reorder columns owned by a table
+    [HttpPut("reorder")]
+    [Permission("columns.edit")]
+    public async Task<IActionResult> ReorderColumns(int tableId, [FromBody] ReorderColumnsDto dto)
+    {
+        if (dto.ColumnIds == null || dto.ColumnIds.Count == 0)
+            return BadRequest("Column IDs are required");
+
+        if (dto.ColumnIds.Count != dto.ColumnIds.Distinct().Count())
+            return BadRequest("Column IDs must be unique");
+
+        var columns = await _context.Columns
+            .Where(c => c.TableId == tableId)
+            .ToListAsync();
+
+        if (columns.Count == 0)
+            return NotFound("No columns found for table");
+
+        var knownColumnIds = columns.Select(c => c.Id).ToHashSet();
+        if (dto.ColumnIds.Any(id => !knownColumnIds.Contains(id)))
+            return BadRequest("Reorder can only include columns owned by this table");
+
+        if (dto.ColumnIds.Count != columns.Count)
+            return BadRequest("Reorder must include every column owned by this table");
+
+        var orderById = dto.ColumnIds
+            .Select((id, index) => new { id, sortOrder = index + 1 })
+            .ToDictionary(item => item.id, item => item.sortOrder);
+
+        foreach (var column in columns)
+        {
+            column.SortOrder = orderById[column.Id];
+        }
+
+        await _context.SaveChangesAsync();
+        await _schemaMetadataSyncService.SyncTableAsync(tableId);
+
+        return NoContent();
     }
 
     /// Update a column
@@ -384,6 +427,7 @@ public class ColumnsController : ControllerBase
                 FieldType = "number",
                 TableId = config.TargetTableId!.Value,
                 IsRequired = false,
+                SortOrder = await GetNextSortOrderAsync(config.TargetTableId.Value),
                 ComponentPropsJson = BuildParentLinkPropsJson()
             };
 
@@ -584,6 +628,7 @@ public class ColumnsController : ControllerBase
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .OrderBy(c => c.TableId == table.Id ? 1 : 0)
+            .ThenBy(c => c.SortOrder)
             .ThenBy(c => c.Id)
             .ToList();
     }
@@ -606,6 +651,15 @@ public class ColumnsController : ControllerBase
 
         columns.AddRange(table.Columns);
     }
+
+    private async Task<int> GetNextSortOrderAsync(int tableId)
+    {
+        var maxSortOrder = await _context.Columns
+            .Where(c => c.TableId == tableId)
+            .MaxAsync(c => (int?)c.SortOrder);
+
+        return (maxSortOrder ?? 0) + 1;
+    }
 }
 
 // DTOs for Columns
@@ -617,8 +671,14 @@ public class ColumnResponseDto
     public bool IsRequired { get; set; }
     public int TableId { get; set; }
     public bool IsInherited { get; set; }
+    public int SortOrder { get; set; }
     public string ComponentPropsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
+}
+
+public class ReorderColumnsDto
+{
+    public List<int> ColumnIds { get; set; } = new();
 }
 
 public class CreateColumnDto

@@ -49,6 +49,13 @@ export function deleteColumn(tableId, columnId) {
   return api(`/tables/${tableId}/columns/${columnId}`, { method: 'DELETE' })
 }
 
+export function reorderColumns(tableId, columnIds) {
+  return api(`/tables/${tableId}/columns/reorder`, {
+    method: 'PUT',
+    body: JSON.stringify({ columnIds }),
+  })
+}
+
 export function createRecord(tableId, data) {
   return api(`/tables/${tableId}/records`, {
     method: 'POST',

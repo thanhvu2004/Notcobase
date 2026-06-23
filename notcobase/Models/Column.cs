@@ -8,6 +8,7 @@ public class Column
     public required string FieldType { get; set; } // "text", "number", "date", "boolean", etc.
     public int TableId { get; set; }
     public bool IsRequired { get; set; }
+    public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation property

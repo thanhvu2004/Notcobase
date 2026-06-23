@@ -150,7 +150,7 @@ export default function UsersApp() {
           <h1>Users & Permissions</h1>
           <p>Manage users, roles, and permission claims.</p>
         </div>
-        <button type="button" className="secondary" onClick={loadAllData} disabled={loading}>
+        <button type="button" className="outline" onClick={loadAllData} disabled={loading}>
           Refresh
         </button>
       </header>
