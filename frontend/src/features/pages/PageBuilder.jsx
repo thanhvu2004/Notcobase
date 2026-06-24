@@ -201,14 +201,8 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     }
   }
 
-  function collectFieldNames(node, names = new Set()) {
-    const fieldName = node?.['x-field'] || node?.name
-    if (fieldName && fieldComponents.includes(node?.['x-component'])) names.add(fieldName)
-    Object.values(node?.properties || {}).forEach((child) => collectFieldNames(child, names))
-    return names
-  }
-
   function toggleFormColumn(columnName, checked) {
+    const selectedColumns = selected['x-component-props']?.formColumns || []
     const column = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).find((item) => item.name === columnName)
 
     setSchema(updateNode(schema, selected.id, (node) => {
@@ -217,7 +211,8 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
         ? [...currentColumns.filter((name) => name !== columnName), columnName]
         : currentColumns.filter((name) => name !== columnName)
       const withoutField = removeFieldByName(node, columnName)
-      const nextProperties = checked && column
+      const alreadyHasField = Object.values(node.properties || {}).some((child) => (child['x-field'] || child.name) === columnName)
+      const nextProperties = checked && column && !alreadyHasField
         ? { ...(withoutField.properties || {}), [column.name]: createFieldNodeFromColumn(column) }
         : withoutField.properties
 
@@ -227,14 +222,6 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
         properties: nextProperties,
       }
     }))
-  }
-
-  function clearFormColumns() {
-    const columnNames = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => column.name)
-    setSchema(updateNode(schema, selected.id, (node) => ({
-      ...columnNames.reduce((current, columnName) => removeFieldByName(current, columnName), node),
-      'x-component-props': { ...(node['x-component-props'] || {}), formColumns: [] },
-    })))
   }
 
   function toggleTableColumn(columnName, checked) {
@@ -327,15 +314,17 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
             </div>
           </section>
 
-          <section className="panel page-tree">
-            <h3>Arrange</h3>
-            <TreeNode node={schema} selectedNodeId={selectedNodeId} onSelect={setSelectedNodeId} />
+          <section className="panel">
+            <div className="panel page-tree">
+              <h3>Arrange</h3>
+              <TreeNode node={schema} selectedNodeId={selectedNodeId} onSelect={setSelectedNodeId} />
+            </div>
+            <div className="button-row">
+              <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'up'))}>Up</button>
+              <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
+              {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
+            </div>
           </section>
-          <div className="button-row">
-            <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'up'))}>Up</button>
-            <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
-            {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
-          </div>
 
           <section className="panel">
             <h3>Configure</h3>
@@ -616,17 +605,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
                   <strong>{selected['x-component'] === 'FormBlock' ? 'Form fields from columns' : 'Table columns'}</strong>
                   <div className="button-row compact">
                     <button type="button" className="secondary" onClick={() => selectAllBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Select all</button>
-                    <button type="button" className="secondary" onClick={() => selected['x-component'] === 'FormBlock' ? clearFormColumns() : patchSelectedProps({ columns: [] })}>Clear</button>
+                    <button type="button" className="secondary" onClick={() => patchSelectedProps(selected['x-component'] === 'FormBlock' ? { formColumns: [] } : { columns: [] })}>Clear</button>
                   </div>
                   <div className="builder-column-list">
                     {getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => {
                       const configured = selected['x-component'] === 'FormBlock'
                         ? selected['x-component-props']?.formColumns || []
                         : selected['x-component-props']?.columns || []
-                      const formFieldNames = selected['x-component'] === 'FormBlock' ? collectFieldNames(selected) : new Set()
-                      const checked = selected['x-component'] === 'FormBlock'
-                        ? configured.includes(column.name) || formFieldNames.has(column.name)
-                        : configured.some((item) => (typeof item === 'string' ? item : item.dataIndex) === column.name)
+                      const checked = configured.some((item) => (typeof item === 'string' ? item : item.dataIndex) === column.name)
                       return (
                         <label key={column.id} className="builder-column-item">
                           <input
