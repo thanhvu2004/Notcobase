@@ -40,8 +40,19 @@ export function getTableColumns(tableDetailsById, tableId) {
   return getVisibleColumns(tableDetailsById[tableId]?.columns || [])
 }
 
+export function formatFinanceValue(value) {
+  if (value == null || value === '') return ''
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue)) return String(value)
+  return numberValue.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 export function formatValue(value, fieldType, componentPropsJson, runtimeData) {
   if (fieldType === 'checkbox') return value === true || value === 'true' || value === '1' ? 'Yes' : 'No'
+  if (fieldType === 'finance') return formatFinanceValue(value)
   if (fieldType === 'reference') {
     const props = parseProps(componentPropsJson)
     const ids = parseIds(value)
