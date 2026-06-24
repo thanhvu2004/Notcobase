@@ -5,12 +5,13 @@ import { fetchTableDetails, fetchTables } from '../tables/tablesApi'
 import { blockComponents, componentTypes, defaultSchema, fieldComponents } from './pageBuilder/constants'
 import {
   collectFieldOptions,
+  getFieldComponentForColumn,
   getColumnOptions,
   getTableColumns,
   parseProps,
 } from './pageBuilder/dataUtils'
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
-import { createId, createNode, findNode, insertNode, moveNode, normalizeSchema, removeNode, updateNode } from './pageBuilder/schemaUtils'
+import { createId, createNode, findNode, insertNode, moveNode, moveNodeToPosition, normalizeSchema, removeNode, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
 import TreeNode from './pageBuilder/TreeNode'
 
@@ -23,6 +24,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
   const [error, setError] = useState('')
   const [tables, setTables] = useState([])
   const [tableDetailsById, setTableDetailsById] = useState({})
+  const [dragState, setDragState] = useState(null)
 
   useEffect(() => {
     let ignore = false
@@ -136,6 +138,13 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     setSelectedNodeId(node.id)
   }
 
+  function handleNodeDrop(dropTarget) {
+    if (!dragState?.draggedNodeId || !dropTarget?.nodeId) return
+    setSchema((currentSchema) => moveNodeToPosition(currentSchema, dragState.draggedNodeId, dropTarget.nodeId, dropTarget.position))
+    setSelectedNodeId(dragState.draggedNodeId)
+    setDragState(null)
+  }
+
   function patchSelected(patch) {
     setSchema(updateNode(schema, selected.id, (node) => ({ ...node, ...patch })))
   }
@@ -167,13 +176,65 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     })
   }
 
+  function createFieldNodeFromColumn(column) {
+    const node = createNode(getFieldComponentForColumn(column))
+    return {
+      ...node,
+      name: column.name,
+      title: column.name,
+      type: column.fieldType === 'checkbox' ? 'boolean' : column.fieldType === 'number' || column.fieldType === 'finance' ? 'number' : 'string',
+      required: column.isRequired,
+      'x-field': column.name,
+      'x-component-props': parseProps(column.componentPropsJson),
+    }
+  }
+
+  function removeFieldByName(node, fieldName) {
+    if (!node.properties) return node
+    return {
+      ...node,
+      properties: Object.fromEntries(
+        Object.entries(node.properties)
+          .filter(([, child]) => (child['x-field'] || child.name) !== fieldName)
+          .map(([key, child]) => [key, removeFieldByName(child, fieldName)]),
+      ),
+    }
+  }
+
+  function collectFieldNames(node, names = new Set()) {
+    const fieldName = node?.['x-field'] || node?.name
+    if (fieldName && fieldComponents.includes(node?.['x-component'])) names.add(fieldName)
+    Object.values(node?.properties || {}).forEach((child) => collectFieldNames(child, names))
+    return names
+  }
+
   function toggleFormColumn(columnName, checked) {
-    const selectedColumns = selected['x-component-props']?.formColumns || []
-    patchSelectedProps({
-      formColumns: checked
-        ? [...selectedColumns.filter((name) => name !== columnName), columnName]
-        : selectedColumns.filter((name) => name !== columnName),
-    })
+    const column = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).find((item) => item.name === columnName)
+
+    setSchema(updateNode(schema, selected.id, (node) => {
+      const currentColumns = node['x-component-props']?.formColumns || []
+      const nextColumns = checked
+        ? [...currentColumns.filter((name) => name !== columnName), columnName]
+        : currentColumns.filter((name) => name !== columnName)
+      const withoutField = removeFieldByName(node, columnName)
+      const nextProperties = checked && column
+        ? { ...(withoutField.properties || {}), [column.name]: createFieldNodeFromColumn(column) }
+        : withoutField.properties
+
+      return {
+        ...withoutField,
+        'x-component-props': { ...(withoutField['x-component-props'] || {}), formColumns: nextColumns },
+        properties: nextProperties,
+      }
+    }))
+  }
+
+  function clearFormColumns() {
+    const columnNames = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => column.name)
+    setSchema(updateNode(schema, selected.id, (node) => ({
+      ...columnNames.reduce((current, columnName) => removeFieldByName(current, columnName), node),
+      'x-component-props': { ...(node['x-component-props'] || {}), formColumns: [] },
+    })))
   }
 
   function toggleTableColumn(columnName, checked) {
@@ -186,8 +247,16 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
 
   function selectAllBlockColumns(kind) {
     const columns = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId)
-    if (kind === 'form') patchSelectedProps({ formColumns: columns.map((column) => column.name) })
-    else patchSelectedProps({ columns: columns.map((column) => ({ title: column.name, dataIndex: column.name })) })
+    if (kind === 'form') {
+      setSchema(updateNode(schema, selected.id, (node) => ({
+        ...node,
+        'x-component-props': { ...(node['x-component-props'] || {}), formColumns: columns.map((column) => column.name) },
+        properties: columns.reduce((properties, column) => ({
+          ...properties,
+          [column.name]: properties[column.name] || createFieldNodeFromColumn(column),
+        }), { ...(node.properties || {}) }),
+      })))
+    } else patchSelectedProps({ columns: columns.map((column) => ({ title: column.name, dataIndex: column.name })) })
   }
 
   function setGridRowColumnCount(value) {
@@ -261,12 +330,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
           <section className="panel page-tree">
             <h3>Arrange</h3>
             <TreeNode node={schema} selectedNodeId={selectedNodeId} onSelect={setSelectedNodeId} />
-            <div className="button-row">
-              <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'up'))}>Up</button>
-              <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
-              {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
-            </div>
           </section>
+          <div className="button-row">
+            <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'up'))}>Up</button>
+            <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
+            {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
+          </div>
 
           <section className="panel">
             <h3>Configure</h3>
@@ -547,14 +616,17 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
                   <strong>{selected['x-component'] === 'FormBlock' ? 'Form fields from columns' : 'Table columns'}</strong>
                   <div className="button-row compact">
                     <button type="button" className="secondary" onClick={() => selectAllBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Select all</button>
-                    <button type="button" className="secondary" onClick={() => patchSelectedProps(selected['x-component'] === 'FormBlock' ? { formColumns: [] } : { columns: [] })}>Clear</button>
+                    <button type="button" className="secondary" onClick={() => selected['x-component'] === 'FormBlock' ? clearFormColumns() : patchSelectedProps({ columns: [] })}>Clear</button>
                   </div>
                   <div className="builder-column-list">
                     {getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => {
                       const configured = selected['x-component'] === 'FormBlock'
                         ? selected['x-component-props']?.formColumns || []
                         : selected['x-component-props']?.columns || []
-                      const checked = configured.some((item) => (typeof item === 'string' ? item : item.dataIndex) === column.name)
+                      const formFieldNames = selected['x-component'] === 'FormBlock' ? collectFieldNames(selected) : new Set()
+                      const checked = selected['x-component'] === 'FormBlock'
+                        ? configured.includes(column.name) || formFieldNames.has(column.name)
+                        : configured.some((item) => (typeof item === 'string' ? item : item.dataIndex) === column.name)
                       return (
                         <label key={column.id} className="builder-column-item">
                           <input
@@ -813,7 +885,17 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
       )}
 
       <section className="page-builder-canvas">
-        {renderNode(schema, editorMode, selectedNodeId, setSelectedNodeId, { tableDetailsById, tables, reloadTableDetails, getFormGroup, onNavigate })}
+        {renderNode(schema, editorMode, selectedNodeId, setSelectedNodeId, {
+          tableDetailsById,
+          tables,
+          reloadTableDetails,
+          getFormGroup,
+          onNavigate,
+          dragState,
+          setDragState,
+          onNodeDrop: handleNodeDrop,
+          rootNodeId: schema.id,
+        })}
       </section>
     </main>
   )

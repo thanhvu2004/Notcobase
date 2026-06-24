@@ -28,6 +28,32 @@ import {
 import { getFormGroupKey } from './formGroups'
 import { getColProps, normalizeGutter } from './layoutUtils'
 
+function RequiredLabel({ children, required }) {
+  return (
+    <>
+      {children}
+      {required && <span className="required-mark"> *</span>}
+    </>
+  )
+}
+
+function getDropPosition(event, node) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const relativeY = rect.height ? (event.clientY - rect.top) / rect.height : 0
+  if (node.properties && relativeY > 0.25 && relativeY < 0.75) return 'inside'
+  return relativeY < 0.5 ? 'before' : 'after'
+}
+
+function collectSchemaFieldNames(node, names = new Set()) {
+  if (!node || typeof node !== 'object') return names
+  const fieldName = node['x-field'] || node.name
+  if (fieldName && ['Input', 'InputNumber', 'Input.TextArea', 'Textarea', 'Select', 'Checkbox', 'Switch', 'DatePicker', 'File', 'Reference'].includes(node['x-component'])) {
+    names.add(fieldName)
+  }
+  Object.values(node.properties || {}).forEach((child) => collectSchemaFieldNames(child, names))
+  return names
+}
+
 function ReferenceTableField({ value, onChange, config, fieldName, disabled, runtimeData, parentRecordId }) {
   const targetTableId = Number(config.targetTableId)
   const mode = getReferenceMode(config)
@@ -329,10 +355,11 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
     [runtimeData.tableDetailsById, tableId],
   )
   const selectedNames = useMemo(
-    () => (Array.isArray(props.formColumns) && props.formColumns.length
-      ? props.formColumns
-      : tableColumns.map((column) => column.name)),
-    [props.formColumns, tableColumns],
+    () => Array.from(new Set([
+      ...(Array.isArray(props.formColumns) ? props.formColumns : []),
+      ...collectSchemaFieldNames(node),
+    ])),
+    [props.formColumns, node],
   )
   const formColumns = useMemo(
     () => tableColumns.filter((column) => selectedNames.includes(column.name)),
@@ -373,6 +400,7 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
   useEffect(() => {
     if (!formGroup) return
     formGroup.configure({
+      schemaId: node.id,
       tableId,
       recordId,
       mode,
@@ -461,24 +489,13 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
   }
 
   const customChildren = Object.values(node.properties || {})
-  const content = customChildren.length
-    ? customChildren.map((child) => renderNode(child, editorMode, selectedNodeId, onSelect, runtimeData, formContext))
-    : formColumns.map((column) => renderNode({
-        id: `${node.id}_${column.id}`,
-        name: column.name,
-        title: column.name,
-        type: column.fieldType === 'checkbox' ? 'boolean' : column.fieldType === 'number' || column.fieldType === 'finance' ? 'number' : 'string',
-        required: column.isRequired,
-        'x-field': column.name,
-        'x-component': getFieldComponentForColumn(column),
-        'x-component-props': parseProps(column.componentPropsJson),
-      }, editorMode, selectedNodeId, onSelect, runtimeData, formContext))
+  const content = customChildren.map((child) => renderNode(child, editorMode, selectedNodeId, onSelect, runtimeData, formContext))
 
   return (
     <form key={node.id} {...selectProps} className={`${selectProps.className || ''} rendered-block form-block`} onSubmit={handleSubmit}>
       <h2>{node.title || 'Form'}</h2>
       {!props.tableId && <p className="muted">Select a table in block settings.</p>}
-      <div className={customChildren.length ? 'form-block-custom-layout' : 'rendered-form-grid'}>{content}</div>
+      <div className="form-block-custom-layout">{content}</div>
       {(!props.useFormGroup || props.showGroupSubmit !== false) && (
         <div className="form-actions">
           <button type="submit" disabled={disabled || saving || !tableId || formColumns.length === 0}>{saving ? 'Saving...' : props.submitLabel || 'Save'}</button>
@@ -494,13 +511,57 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
   const component = node['x-component'] || 'Text'
   const props = node['x-component-props'] || {}
   const children = Object.values(node.properties || {}).map((child) => renderNode(child, editorMode, selectedNodeId, onSelect, runtimeData, formContext))
-  const className = editorMode && selectedNodeId === node.id ? 'page-node selected' : editorMode ? 'page-node' : ''
+  const dragState = runtimeData?.dragState
+  const dropActive = dragState?.dropTarget?.nodeId === node.id ? ` drop-${dragState.dropTarget.position}` : ''
+  const isDragging = dragState?.draggedNodeId === node.id ? ' dragging' : ''
+  const className = editorMode && selectedNodeId === node.id ? `page-node selected${dropActive}${isDragging}` : editorMode ? `page-node${dropActive}${isDragging}` : ''
   const selectProps = editorMode
     ? {
         className,
+        draggable: node.id !== runtimeData?.rootNodeId,
         onClick: (event) => {
           event.stopPropagation()
           onSelect(node.id)
+        },
+        onDragStart: (event) => {
+          if (node.id === runtimeData?.rootNodeId) {
+            event.preventDefault()
+            return
+          }
+          event.stopPropagation()
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', node.id)
+          runtimeData?.setDragState?.({ draggedNodeId: node.id, dropTarget: null })
+        },
+        onDragOver: (event) => {
+          const draggedNodeId = dragState?.draggedNodeId || event.dataTransfer.getData('text/plain')
+          if (!draggedNodeId || draggedNodeId === node.id) return
+          event.preventDefault()
+          event.stopPropagation()
+          event.dataTransfer.dropEffect = 'move'
+          const position = getDropPosition(event, node)
+          if (dragState?.dropTarget?.nodeId !== node.id || dragState?.dropTarget?.position !== position) {
+            runtimeData?.setDragState?.({ draggedNodeId, dropTarget: { nodeId: node.id, position } })
+          }
+        },
+        onDragLeave: (event) => {
+          event.stopPropagation()
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            runtimeData?.setDragState?.((current) => current?.dropTarget?.nodeId === node.id
+              ? { ...current, dropTarget: null }
+              : current)
+          }
+        },
+        onDrop: (event) => {
+          const draggedNodeId = dragState?.draggedNodeId || event.dataTransfer.getData('text/plain')
+          if (!draggedNodeId || draggedNodeId === node.id) return
+          event.preventDefault()
+          event.stopPropagation()
+          runtimeData?.onNodeDrop?.({ nodeId: node.id, position: getDropPosition(event, node) })
+        },
+        onDragEnd: (event) => {
+          event.stopPropagation()
+          runtimeData?.setDragState?.(null)
         },
       }
     : {}
@@ -572,6 +633,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
   if (['Input', 'InputNumber', 'Input.TextArea', 'Textarea', 'Select', 'Checkbox', 'Switch', 'DatePicker', 'File'].includes(component) && formContext) {
     const fieldName = node['x-field'] || node.name
     const column = getColumnByFieldName(formContext.columns || getTableColumns(runtimeData.tableDetailsById, formContext.tableId), fieldName)
+    const required = Boolean(node.required || column?.isRequired)
     if (component === 'Checkbox' || component === 'Switch') {
       return (
         <div
@@ -580,22 +642,22 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
           className={`${selectProps.className || ''} check-row`}
         >
           <FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} />
-          {node.title && <span className="field-label">{node.title}</span>}
+          {node.title && <span className="field-label"><RequiredLabel required={required}>{node.title}</RequiredLabel></span>}
         </div>
       )
     }
-    return <label key={node.id} {...selectProps}>{node.title}<FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
+    return <label key={node.id} {...selectProps}><RequiredLabel required={required}>{node.title}</RequiredLabel><FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
   }
-  if (component === 'Input') return <label key={node.id} {...selectProps}>{node.title}<input placeholder={props.placeholder} /></label>
-  if (component === 'InputNumber') return <label key={node.id} {...selectProps}>{node.title}<input type="number" placeholder={props.placeholder} /></label>
-  if (component === 'Textarea' || component === 'Input.TextArea') return <label key={node.id} {...selectProps}>{node.title}<textarea rows="4" placeholder={props.placeholder} /></label>
+  if (component === 'Input') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input placeholder={props.placeholder} /></label>
+  if (component === 'InputNumber') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="number" placeholder={props.placeholder} /></label>
+  if (component === 'Textarea' || component === 'Input.TextArea') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><textarea rows="4" placeholder={props.placeholder} /></label>
   if (component === 'Select') {
     const options = props.optionMode === 'dynamic'
       ? getDynamicSelectOptions(props, runtimeData)
       : (node.enum || props.options || []).map((option) => ({ value: getOptionValue(option), label: getOptionLabel(option) }))
     return (
       <label key={node.id} {...selectProps}>
-        {node.title}
+        <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
         <AntSelect
           placeholder={props.placeholder || 'Select'}
           options={options}
@@ -605,15 +667,15 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
       </label>
     )
   }
-  if (component === 'Checkbox') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input type="checkbox" />{node.title}</label>
-  if (component === 'Switch') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input className="custom-checkbox" type="checkbox" />{node.title}</label>
-  if (component === 'DatePicker') return <label key={node.id} {...selectProps}>{node.title}<input type="date" /></label>
-  if (component === 'File') return <label key={node.id} {...selectProps}>{node.title}<input type="file" /></label>
+  if (component === 'Checkbox') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></label>
+  if (component === 'Switch') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input className="custom-checkbox" type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></label>
+  if (component === 'DatePicker') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="date" /></label>
+  if (component === 'File') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="file" /></label>
   if (component === 'Reference') {
     if (formContext) {
       const fieldName = node['x-field'] || node.name
       const column = getColumnByFieldName(formContext.columns || getTableColumns(runtimeData.tableDetailsById, formContext.tableId), fieldName)
-      return <label key={node.id} {...selectProps}>{node.title}<FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
+      return <label key={node.id} {...selectProps}><RequiredLabel required={node.required || column?.isRequired}>{node.title}</RequiredLabel><FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
     }
     const targetTable = runtimeData.tables?.find((table) => table.id === Number(props.targetTableId))
     const targetDetails = runtimeData.tableDetailsById[props.targetTableId]
@@ -624,7 +686,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
     }))
     return (
       <label key={node.id} {...selectProps}>
-        {node.title}
+        <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
         <AntSelect
           mode="multiple"
           allowClear
@@ -653,6 +715,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
       : tableColumns
     const records = runtimeData.tableDetailsById[props.tableId]?.records || []
     function openCreate() {
+      if (editorMode) return
       if (props.createAction === 'navigate') {
         navigateToPage(runtimeData, props.createTargetPageId, {
           tableId: props.tableId,
@@ -663,6 +726,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
     }
 
     function openEdit(record) {
+      if (editorMode) return
       if (props.editAction === 'navigate') {
         const recordId = record.id
         navigateToPage(runtimeData, props.editTargetPageId, {
@@ -676,6 +740,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
     }
 
     function openRow(record) {
+      if (editorMode) return
       if (props.rowClickAction !== 'navigate') return
       const recordId = record.id
       navigateToPage(runtimeData, props.rowTargetPageId, {
@@ -704,7 +769,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
               </thead>
               <tbody>
                 {records.slice(0, props.pageSize || 10).map((record) => (
-                  <tr key={record.id} className={props.rowClickAction === 'navigate' ? 'clickable-row' : ''} onClick={() => openRow(record)}>
+                  <tr key={record.id} className={!editorMode && props.rowClickAction === 'navigate' ? 'clickable-row' : ''} onClick={() => openRow(record)}>
                     {selectedColumns.map((column) => <td key={column.id}>{formatValue(record.data?.[column.name], column.fieldType, column.componentPropsJson, runtimeData)}</td>)}
                     {(props.allowEdit !== false || props.allowDelete) && (
                       <td onClick={(event) => event.stopPropagation()}>

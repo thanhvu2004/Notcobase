@@ -104,6 +104,8 @@ export default function App() {
   }
 
   function handleNavigate({ targetPageId, params = {} } = {}) {
+    if (editorMode) return false
+
     if (!targetPageId) {
       setError('Select a target page first.')
       return false
@@ -170,7 +172,7 @@ export default function App() {
         </nav>
         <div className="session-controls">
           <label className="editor-mode-toggle">
-            <input type="checkbox" checked={editorMode} onChange={(event) => handleEditorModeChange(event.target.checked)} />
+            <input className="custom-checkbox" type="checkbox" checked={editorMode} onChange={(event) => handleEditorModeChange(event.target.checked)} />
             Editor Mode
           </label>
           <span>{user?.username || 'Signed in'}</span>

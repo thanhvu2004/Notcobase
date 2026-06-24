@@ -216,3 +216,51 @@ export function moveNode(schema, nodeId, direction) {
   nextEntries.splice(nextIndex, 0, item)
   return updateNode(schema, found.parent.id, (parent) => ({ ...parent, properties: Object.fromEntries(nextEntries) }))
 }
+
+function isDescendant(node, nodeId) {
+  if (!node?.properties) return false
+  return Object.values(node.properties).some((child) => child.id === nodeId || isDescendant(child, nodeId))
+}
+
+function withOrderedProperties(node, entries) {
+  return {
+    ...node,
+    properties: Object.fromEntries(entries.map(([key, child], index) => [
+      key,
+      { ...child, 'x-index': index },
+    ])),
+  }
+}
+
+export function moveNodeToPosition(schema, draggedNodeId, targetNodeId, position) {
+  if (!draggedNodeId || !targetNodeId || draggedNodeId === targetNodeId) return schema
+
+  const dragged = findNode(schema, draggedNodeId)
+  const target = findNode(schema, targetNodeId)
+  if (!dragged?.parent || !target?.node) return schema
+  if (dragged.node.id === schema.id || isDescendant(dragged.node, targetNodeId)) return schema
+
+  const canNest = position === 'inside' && target.node.properties
+  const dropParent = canNest ? target.node : target.parent
+  if (!dropParent) return schema
+
+  const withoutDragged = removeNode(schema, draggedNodeId)
+  const freshDropParent = findNode(withoutDragged, dropParent.id)?.node
+  const freshTarget = findNode(withoutDragged, targetNodeId)?.node
+  if (!freshDropParent || (!canNest && !freshTarget)) return schema
+
+  const entries = Object.entries(freshDropParent.properties || {})
+  const draggedEntry = [dragged.key || dragged.node.name, dragged.node]
+
+  if (canNest) {
+    return updateNode(withoutDragged, freshDropParent.id, (parent) => withOrderedProperties(parent, [...entries, draggedEntry]))
+  }
+
+  const targetIndex = entries.findIndex(([, child]) => child.id === targetNodeId)
+  if (targetIndex < 0) return schema
+
+  const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex
+  const nextEntries = [...entries]
+  nextEntries.splice(insertIndex, 0, draggedEntry)
+  return updateNode(withoutDragged, freshDropParent.id, (parent) => withOrderedProperties(parent, nextEntries))
+}

@@ -126,8 +126,7 @@ textarea {
 }
 
 label {
-  display: grid;
-  gap: 0.35rem;
+  display: block;
   color: #334155;
   font-size: 0.9rem;
   font-weight: 600;
@@ -214,6 +213,11 @@ label {
   font-size: 0.9rem;
   font-weight: 700;
   white-space: nowrap;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.55rem 0.55rem;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .editor-mode-toggle input {
@@ -703,6 +707,15 @@ label {
   border-radius: 8px;
 }
 
+.page-node[draggable="true"] {
+  cursor: grab;
+}
+
+.page-node.dragging {
+  cursor: grabbing;
+  opacity: 0.45;
+}
+
 .page-node:hover {
   outline-color: #2563eb;
 }
@@ -710,6 +723,34 @@ label {
 .page-node.selected {
   outline: 2px dashed #eb830c;
   outline-offset: 4px;
+}
+
+.page-node.drop-before::before,
+.page-node.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  z-index: 3;
+  height: 3px;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15);
+  pointer-events: none;
+}
+
+.page-node.drop-before::before {
+  top: -0.55rem;
+}
+
+.page-node.drop-after::after {
+  bottom: -0.55rem;
+}
+
+.page-node.drop-inside {
+  outline: 2px solid #2563eb;
+  outline-offset: 5px;
+  background-image: linear-gradient(rgb(37 99 235 / 0.08), rgb(37 99 235 / 0.08));
 }
 
 .page-tree {

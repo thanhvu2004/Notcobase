@@ -10,7 +10,7 @@ export function getFormGroupKey(config, tableId) {
 }
 
 export function createFormGroupCoordinator() {
-  const columns = new Map()
+  const columnsBySchema = new Map()
   const listeners = new Set()
   let values = {}
   let tableId = null
@@ -28,9 +28,15 @@ export function createFormGroupCoordinator() {
       recordId = config.recordId ?? recordId
       mode = config.mode || mode
       allowCreate = allowCreate !== false && config.allowCreate !== false
-      ;(config.columns || []).forEach((column) => columns.set(column.name, column))
+      if (config.schemaId) {
+        columnsBySchema.set(config.schemaId, config.columns || [])
+      }
     },
     getSnapshot() {
+      const columns = new Map()
+      columnsBySchema.forEach((schemaColumns) => {
+        schemaColumns.forEach((column) => columns.set(column.name, column))
+      })
       return {
         values,
         tableId,
