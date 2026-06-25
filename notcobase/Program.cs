@@ -13,17 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Controllers
 builder.Services.AddControllers();
 
-// Razor Pages
-builder.Services.AddRazorPages();
-
-// Session
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-});
-
 // HttpClient
 builder.Services.AddHttpClient();
 
@@ -97,16 +86,12 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseExceptionHandler("/Error");
+    app.UseExceptionHandler("/api/error");
     app.UseHsts();
 }
 
 // HTTPS
 app.UseHttpsRedirection();
-// Static Files
-app.UseStaticFiles();
-// Session
-app.UseSession();
 // Routing
 app.UseRouting();
 // Authentication
@@ -116,7 +101,7 @@ app.UseAuthorization();
 
 // ENDPOINTS
 app.MapControllers();
-app.MapRazorPages();
+app.Map("/api/error", () => Results.Problem());
 
 // Seed database
 using (var scope = app.Services.CreateScope())
