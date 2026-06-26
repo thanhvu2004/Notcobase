@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
-import { Collapse, Col as AntCol, Divider as AntDivider, Row as AntRow, Select as AntSelect, Tabs as AntTabs } from 'antd'
+import { Collapse, Col as AntCol, Divider as AntDivider, Row as AntRow, Select as AntSelect, Tabs as AntTabs, message } from 'antd'
 import { createRecord, updateRecord } from '../../tables/tablesApi'
 import {
   areFormValuesEqual,
@@ -377,7 +377,6 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
   }), [formColumns, editingRecord, node])
   const [values, setValues] = useState(() => initialValues)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
 
   function updateValues(updater) {
     const nextValues = typeof updater === 'function' ? updater(values) : updater
@@ -467,22 +466,40 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
     try {
       if (mode === 'edit' && recordId) {
         const relatedUpdates = await saveRelatedDrafts(recordId)
-        await updateRecord(tableId, recordId, { ...payload, ...relatedUpdates })
+        await updateRecord(tableId, recordId, {
+          ...payload,
+          ...relatedUpdates,
+        })
       } else {
         const created = await createRecord(tableId, payload)
         const createdId = Number(created?.id || created?.value?.id)
+
         if (createdId) {
           const relatedUpdates = await saveRelatedDrafts(createdId)
-          if (Object.keys(relatedUpdates).length) await updateRecord(tableId, createdId, relatedUpdates)
+
+          if (Object.keys(relatedUpdates).length) {
+            await updateRecord(tableId, createdId, relatedUpdates)
+          }
         }
       }
+
       await runtimeData.reloadTableDetails?.(tableId)
-      if (formGroup) {
-        formGroup.clearValues()
-      }
-      setMessage('Saved')
+      formGroup?.clearValues()
+      message.success('Saved')
     } catch (err) {
-      setMessage(err.message)
+      const errorMessage =
+        err?.response?.data?.message ??
+        err?.message ??
+        'Failed to save'
+
+      const requiredField =
+        errorMessage.match(/Column '(.*?)' is required/)?.[1]
+
+      message.error(
+        requiredField
+          ? `${requiredField} is required`
+          : errorMessage
+      )
     } finally {
       setSaving(false)
     }
@@ -499,8 +516,6 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
       {(!props.useFormGroup || props.showGroupSubmit !== false) && (
         <div className="form-actions">
           <button type="submit" disabled={disabled || saving || !tableId || formColumns.length === 0}>{saving ? 'Saving...' : props.submitLabel || 'Save'}</button>
-          {formGroup && <span className="muted">Group: {groupKey}</span>}
-          {message && <span className={message === 'Saved' ? 'success-text' : 'text-danger'}>{message}</span>}
         </div>
       )}
     </form>

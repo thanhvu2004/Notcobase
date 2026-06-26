@@ -112,6 +112,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     try {
       const updated = await updatePage(page.id, {
         name: page.name,
+        sectionName: page.sectionName,
         schemaJson: JSON.stringify(schema),
         isPublished: true,
       })
@@ -202,7 +203,6 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
   }
 
   function toggleFormColumn(columnName, checked) {
-    const selectedColumns = selected['x-component-props']?.formColumns || []
     const column = getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).find((item) => item.name === columnName)
 
     setSchema(updateNode(schema, selected.id, (node) => {

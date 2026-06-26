@@ -31,6 +31,7 @@ public class LowCodePagesController : ControllerBase
                 Id = p.Id,
                 Name = p.Name,
                 Slug = p.Slug,
+                SectionName = p.SectionName,
                 SchemaJson = p.SchemaJson,
                 IsPublished = p.IsPublished,
                 CreatedAt = p.CreatedAt,
@@ -69,6 +70,7 @@ public class LowCodePagesController : ControllerBase
         {
             Name = request.Name.Trim(),
             Slug = await BuildUniqueSlug(request.Name),
+            SectionName = NormalizeSectionName(request.SectionName),
             SchemaJson = request.SchemaJson,
             IsPublished = request.IsPublished,
         };
@@ -95,6 +97,7 @@ public class LowCodePagesController : ControllerBase
         }
 
         page.Name = request.Name.Trim();
+        page.SectionName = NormalizeSectionName(request.SectionName);
         page.SchemaJson = request.SchemaJson;
         page.IsPublished = request.IsPublished;
         page.UpdatedAt = DateTime.UtcNow;
@@ -160,6 +163,12 @@ public class LowCodePagesController : ControllerBase
         return slug;
     }
 
+    private static string? NormalizeSectionName(string? sectionName)
+    {
+        var trimmed = sectionName?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
     private static LowCodePageDto ToDto(LowCodePage page)
     {
         return new LowCodePageDto
@@ -167,6 +176,7 @@ public class LowCodePagesController : ControllerBase
             Id = page.Id,
             Name = page.Name,
             Slug = page.Slug,
+            SectionName = page.SectionName,
             SchemaJson = page.SchemaJson,
             IsPublished = page.IsPublished,
             CreatedAt = page.CreatedAt,
@@ -178,6 +188,7 @@ public class LowCodePagesController : ControllerBase
 public class LowCodePageRequest
 {
     public required string Name { get; set; }
+    public string? SectionName { get; set; }
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
 }
@@ -187,6 +198,7 @@ public class LowCodePageDto
     public int Id { get; set; }
     public required string Name { get; set; }
     public string? Slug { get; set; }
+    public string? SectionName { get; set; }
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }

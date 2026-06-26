@@ -166,6 +166,102 @@ label {
   flex-wrap: wrap;
 }
 
+.nav-section {
+  position: relative;
+}
+
+.top-nav nav button[draggable="true"],
+.nav-section > button[draggable="true"] {
+  cursor: grab;
+}
+
+.top-nav nav button {
+  position: relative;
+}
+
+.top-nav nav button[draggable="true"]:active,
+.nav-section > button[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.nav-section > button[draggable="true"] {
+  border-style: dashed;
+}
+
+.top-nav nav > button.nav-drop-before::before,
+.top-nav nav > button.nav-drop-after::after,
+.nav-section > button.nav-drop-before::before,
+.nav-section > button.nav-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  z-index: 2;
+  width: 3px;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.16);
+  pointer-events: none;
+}
+
+.top-nav nav > button.nav-drop-before::before,
+.nav-section > button.nav-drop-before::before {
+  left: -0.35rem;
+}
+
+.top-nav nav > button.nav-drop-after::after,
+.nav-section > button.nav-drop-after::after {
+  right: -0.35rem;
+}
+
+.nav-section > button.nav-drop-inside {
+  border-color: #2563eb;
+  background: rgb(37 99 235 / 0.08);
+  box-shadow: inset 0 0 0 2px rgb(37 99 235 / 0.22);
+}
+
+.nav-section-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 180px;
+  gap: 0.25rem;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 0.14);
+  padding: 0.35rem;
+}
+
+.nav-section-menu button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.nav-section-menu button.nav-drop-before::before,
+.nav-section-menu button.nav-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  height: 3px;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.16);
+  pointer-events: none;
+}
+
+.nav-section-menu button.nav-drop-before::before {
+  top: -0.25rem;
+}
+
+.nav-section-menu button.nav-drop-after::after {
+  bottom: -0.25rem;
+}
+
 .top-nav nav button,
 .brand-button {
   border-color: transparent;

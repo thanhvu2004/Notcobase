@@ -17,27 +17,52 @@ export function createDefaultPageSchema(name) {
 }
 
 export function fetchPages() {
-  return api('/lowcode-pages')
+  return api('/lowcode-pages').then((pages) => pages.map((page) => normalizePage(page)))
 }
 
 export function fetchPage(pageId) {
-  return api(`/lowcode-pages/${pageId}`)
+  return api(`/lowcode-pages/${pageId}`).then(normalizePage)
 }
 
 export function createPage(payload) {
   return api('/lowcode-pages', {
     method: 'POST',
     body: JSON.stringify(payload),
-  })
+  }).then((page) => normalizePage(page, payload.sectionName))
 }
 
 export function updatePage(pageId, payload) {
   return api(`/lowcode-pages/${pageId}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
-  })
+  }).then((page) => normalizePage(page, payload.sectionName))
 }
 
 export function deletePage(pageId) {
   return api(`/lowcode-pages/${pageId}`, { method: 'DELETE' })
+}
+
+export function movePageToSection(page, sectionName) {
+  return updatePage(page.id, {
+    name: page.name,
+    sectionName,
+    schemaJson: page.schemaJson,
+    isPublished: page.isPublished,
+  })
+}
+
+function normalizePage(page, fallbackSectionName) {
+  if (!page) return page
+  const sectionName = normalizeSectionName(page.sectionName ?? page.SectionName ?? fallbackSectionName)
+
+  return {
+    ...page,
+    sectionName,
+  }
+}
+
+function normalizeSectionName(sectionName) {
+  if (typeof sectionName !== 'string') return null
+  const trimmed = sectionName.trim()
+  return trimmed || null
 }
