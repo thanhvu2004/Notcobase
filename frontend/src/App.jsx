@@ -38,7 +38,7 @@ export default function App() {
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('notcobase:editor-mode') === 'true')
   const [locationSearch, setLocationSearch] = useState(() => window.location.search)
   const [creatingPage, setCreatingPage] = useState(false)
-  const [pageMenuOpen, setPageMenuOpen] = useState(false)
+  const [, setPageMenuOpen] = useState(false)
   const [openSectionName, setOpenSectionName] = useState('')
   const [error, setError] = useState('')
   const [user, setUser] = useState(() => {
@@ -495,15 +495,17 @@ export default function App() {
 
       {error && <div className="error-banner app-error">{error}</div>}
 
-      {!editorMode && pages.length === 0 ? (
+      {route === 'tables' ? (
+        <TablesApp />
+      ) : route === 'users' ? (
+        <UsersApp />
+      ) : !editorMode && pages.length === 0 ? (
         <main className="page-content">
           <section className="empty-state">
             <h2>No pages yet</h2>
             <p>Turn on Editor Mode to create the first page.</p>
           </section>
         </main>
-      ) : route === 'users' && editorMode ? (
-        <UsersApp />
       ) : activePage ? (
         <PageBuilder pageId={activePage.id} pages={pages} editorMode={editorMode} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
       ) : activePageId ? (
@@ -513,8 +515,6 @@ export default function App() {
             <p>The selected page is no longer available.</p>
           </section>
         </main>
-      ) : editorMode ? (
-        <TablesApp />
       ) : (
         <main className="page-content">
           <section className="empty-state">
