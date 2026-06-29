@@ -40,6 +40,7 @@ export default function App() {
   const [locationSearch, setLocationSearch] = useState(() => window.location.search)
   const [creatingPage, setCreatingPage] = useState(false)
   const [, setPageMenuOpen] = useState(false)
+  const [, setPageMenuOpen] = useState(false)
   const [openSectionName, setOpenSectionName] = useState('')
   const [error, setError] = useState('')
   const [user, setUser] = useState(() => {
@@ -497,7 +498,11 @@ export default function App() {
 
       {error && <div className="error-banner app-error">{error}</div>}
 
-      {!editorMode && pages.length === 0 ? (
+      {route === 'tables' ? (
+        <TablesApp />
+      ) : route === 'users' ? (
+        <UsersApp />
+      ) : !editorMode && pages.length === 0 ? (
         <main className="page-content">
           <section className="empty-state">
             <h2>No pages yet</h2>
