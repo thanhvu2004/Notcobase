@@ -40,7 +40,6 @@ export default function App() {
   const [locationSearch, setLocationSearch] = useState(() => window.location.search)
   const [creatingPage, setCreatingPage] = useState(false)
   const [, setPageMenuOpen] = useState(false)
-  const [, setPageMenuOpen] = useState(false)
   const [openSectionName, setOpenSectionName] = useState('')
   const [error, setError] = useState('')
   const [user, setUser] = useState(() => {
@@ -499,37 +498,6 @@ export default function App() {
       {error && <div className="error-banner app-error">{error}</div>}
 
       {route === 'tables' ? (
-        <TablesApp />
-      ) : route === 'users' ? (
-        <UsersApp />
-      ) : !editorMode && pages.length === 0 ? (
-        <main className="page-content">
-          <section className="empty-state">
-            <h2>No pages yet</h2>
-            <p>Turn on Editor Mode to create the first page.</p>
-          </section>
-        </main>
-      ) : route === 'users' && editorMode ? (
-        can(['users.view', 'roles.view', 'permissions.view']) ? (
-          <UsersApp user={user} />
-        ) : (
-          <main className="page-content">
-            <section className="empty-state">
-              <h2>Access denied</h2>
-              <p>You do not have permission to manage users.</p>
-            </section>
-          </main>
-        )
-      ) : activePage ? (
-        <PageBuilder pageId={activePage.id} pages={pages} editorMode={editorMode} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
-      ) : activePageId ? (
-        <main className="page-content">
-          <section className="empty-state">
-            <h2>Page not found</h2>
-            <p>The selected page is no longer available.</p>
-          </section>
-        </main>
-      ) : editorMode ? (
         can('tables.view') ? (
           <TablesApp user={user} />
         ) : (
@@ -540,6 +508,33 @@ export default function App() {
             </section>
           </main>
         )
+      ) : route === 'users' ? (
+        can(['users.view', 'roles.view', 'permissions.view']) ? (
+          <UsersApp user={user} />
+        ) : (
+          <main className="page-content">
+            <section className="empty-state">
+              <h2>Access denied</h2>
+              <p>You do not have permission to manage users.</p>
+            </section>
+          </main>
+        )
+      ) : !editorMode && pages.length === 0 ? (
+        <main className="page-content">
+          <section className="empty-state">
+            <h2>No pages yet</h2>
+            <p>Turn on Editor Mode to create the first page.</p>
+          </section>
+        </main>
+      ) : activePage ? (
+        <PageBuilder pageId={activePage.id} pages={pages} editorMode={editorMode} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
+      ) : activePageId ? (
+        <main className="page-content">
+          <section className="empty-state">
+            <h2>Page not found</h2>
+            <p>The selected page is no longer available.</p>
+          </section>
+        </main>
       ) : (
         <main className="page-content">
           <section className="empty-state">
