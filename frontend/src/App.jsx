@@ -4,6 +4,7 @@ import PageBuilder from './features/pages/PageBuilder'
 import { createDefaultPageSchema, createPage, fetchPages, movePageToSection } from './features/pages/pagesApi'
 import TablesApp from './features/tables/TablesApp'
 import UsersApp from './features/users/UsersApp'
+import { createPermissionChecker } from './features/auth/permissions'
 import './App.css'
 import { Dropdown } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
@@ -38,7 +39,7 @@ export default function App() {
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('notcobase:editor-mode') === 'true')
   const [locationSearch, setLocationSearch] = useState(() => window.location.search)
   const [creatingPage, setCreatingPage] = useState(false)
-  const [pageMenuOpen, setPageMenuOpen] = useState(false)
+  const [, setPageMenuOpen] = useState(false)
   const [openSectionName, setOpenSectionName] = useState('')
   const [error, setError] = useState('')
   const [user, setUser] = useState(() => {
@@ -47,6 +48,7 @@ export default function App() {
   })
 
   const isAuthenticated = Boolean(localStorage.getItem('jwtToken'))
+  const can = createPermissionChecker(user)
 
   const loadPages = useCallback(async () => {
     try {
@@ -359,17 +361,17 @@ export default function App() {
   })).sort((left, right) => sortByNavOrder(`section:${left.sectionName}`, `section:${right.sectionName}`))
 
   const systemMenuItems = [
-    {
+    can('tables.view') && {
       key: 'tables',
       label: 'Tables',
       onClick: () => navigateRoute('tables'),
     },
-    {
+    can(['users.view', 'roles.view', 'permissions.view']) && {
       key: 'users',
       label: 'Users',
       onClick: () => navigateRoute('users'),
     },
-  ]
+  ].filter(Boolean)
 
   const AddMenuItems = [
     {
@@ -503,7 +505,16 @@ export default function App() {
           </section>
         </main>
       ) : route === 'users' && editorMode ? (
-        <UsersApp />
+        can(['users.view', 'roles.view', 'permissions.view']) ? (
+          <UsersApp user={user} />
+        ) : (
+          <main className="page-content">
+            <section className="empty-state">
+              <h2>Access denied</h2>
+              <p>You do not have permission to manage users.</p>
+            </section>
+          </main>
+        )
       ) : activePage ? (
         <PageBuilder pageId={activePage.id} pages={pages} editorMode={editorMode} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
       ) : activePageId ? (
@@ -514,7 +525,16 @@ export default function App() {
           </section>
         </main>
       ) : editorMode ? (
-        <TablesApp />
+        can('tables.view') ? (
+          <TablesApp user={user} />
+        ) : (
+          <main className="page-content">
+            <section className="empty-state">
+              <h2>Access denied</h2>
+              <p>You do not have permission to manage tables.</p>
+            </section>
+          </main>
+        )
       ) : (
         <main className="page-content">
           <section className="empty-state">
