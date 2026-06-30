@@ -18,16 +18,22 @@ export async function api(path, options = {}) {
   })
 
   if (response.status === 401) {
-    throw new Error('Unauthorized. Please sign in again.')
+    const error = new Error('Unauthorized. Please sign in again.')
+    error.status = response.status
+    throw error
   }
 
   if (response.status === 403) {
-    throw new Error('You do not have permission.')
+    const error = new Error('You do not have permission.')
+    error.status = response.status
+    throw error
   }
 
   if (!response.ok) {
     const message = await response.text()
-    throw new Error(message || `Request failed with status ${response.status}`)
+    const error = new Error(message || `Request failed with status ${response.status}`)
+    error.status = response.status
+    throw error
   }
 
   if (response.status === 204) {

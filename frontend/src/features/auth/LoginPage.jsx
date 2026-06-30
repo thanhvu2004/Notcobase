@@ -29,7 +29,6 @@ export default function LoginPage({ onLogin }) {
       <form className="login-card" onSubmit={handleSubmit}>
         <div>
           <h1>Sign in</h1>
-          <p>Use your Notcobase account to manage tables and users.</p>
         </div>
 
         {error && <div className="error-banner">{error}</div>}

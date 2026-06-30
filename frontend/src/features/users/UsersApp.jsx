@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { permissionsApi, rolesApi, usersApi } from './usersApi'
+import { createPermissionChecker } from '../auth/permissions'
 
-export default function UsersApp() {
+export default function UsersApp({ user }) {
   const [activeTab, setActiveTab] = useState('users')
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
@@ -13,14 +14,34 @@ export default function UsersApp() {
   const [permissionName, setPermissionName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const can = createPermissionChecker(user)
+  const canViewUsers = can('users.view')
+  const canCreateUser = can('users.create')
+  const canDeleteUser = can('users.delete')
+  const canViewRoles = can('roles.view')
+  const canCreateRole = can('roles.create')
+  const canDeleteRole = can('roles.delete')
+  const canAssignRole = can('roles.assign')
+  const canRemoveRole = can('roles.remove')
+  const canViewPermissions = can('permissions.view')
+  const canCreatePermission = can('permissions.create')
+  const canDeletePermission = can('permissions.delete')
+  const canAssignPermission = can('permissions.assign')
+  const canRemovePermission = can('permissions.remove')
+  const visibleTabs = [
+    canViewUsers && 'users',
+    canViewRoles && 'roles',
+    canViewPermissions && 'permissions',
+  ].filter(Boolean)
+  const activeVisibleTab = visibleTabs.includes(activeTab) ? activeTab : visibleTabs[0] || ''
 
-  async function loadAllData() {
+  const loadAllData = useCallback(async function loadAllData() {
     setLoading(true)
     try {
       const [nextUsers, nextRoles, nextPermissions] = await Promise.all([
-        usersApi.list(),
-        rolesApi.list(),
-        permissionsApi.list(),
+        canViewUsers ? usersApi.list() : Promise.resolve([]),
+        canViewRoles ? rolesApi.list() : Promise.resolve([]),
+        canViewPermissions ? permissionsApi.list() : Promise.resolve([]),
       ])
       setUsers(nextUsers)
       setRoles(nextRoles)
@@ -37,15 +58,16 @@ export default function UsersApp() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [canViewPermissions, canViewRoles, canViewUsers])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAllData()
-  }, [])
+  }, [loadAllData])
 
   async function handleCreateUser(event) {
     event.preventDefault()
+    if (!canCreateUser) return
     try {
       await usersApi.create(userForm.username, userForm.password)
       setUserForm({ username: '', password: '' })
@@ -56,6 +78,7 @@ export default function UsersApp() {
   }
 
   async function handleDeleteUser(user) {
+    if (!canDeleteUser) return
     if (!confirm(`Delete user "${user.username}"?`)) return
     try {
       await usersApi.delete(user.id)
@@ -67,6 +90,7 @@ export default function UsersApp() {
 
   async function handleAssignRole(roleId) {
     if (!selectedUser) return
+    if (!canAssignRole) return
     try {
       await usersApi.assignRole(selectedUser.id, roleId)
       await loadAllData()
@@ -77,6 +101,7 @@ export default function UsersApp() {
 
   async function handleRemoveRole(roleName) {
     if (!selectedUser) return
+    if (!canRemoveRole) return
     const role = roles.find((item) => item.roleName === roleName)
     if (!role) return
     try {
@@ -89,6 +114,7 @@ export default function UsersApp() {
 
   async function handleCreateRole(event) {
     event.preventDefault()
+    if (!canCreateRole) return
     try {
       await rolesApi.create(roleName)
       setRoleName('')
@@ -99,6 +125,7 @@ export default function UsersApp() {
   }
 
   async function handleDeleteRole(role) {
+    if (!canDeleteRole) return
     if (!confirm(`Delete role "${role.roleName}"?`)) return
     try {
       await rolesApi.delete(role.id)
@@ -110,6 +137,7 @@ export default function UsersApp() {
 
   async function handlePermissionToggle(permission, checked) {
     if (!selectedRole) return
+    if (checked ? !canAssignPermission : !canRemovePermission) return
     try {
       if (checked) {
         await rolesApi.assignPermission(selectedRole.id, permission.id)
@@ -124,6 +152,7 @@ export default function UsersApp() {
 
   async function handleCreatePermission(event) {
     event.preventDefault()
+    if (!canCreatePermission) return
     try {
       await permissionsApi.create(permissionName)
       setPermissionName('')
@@ -134,6 +163,7 @@ export default function UsersApp() {
   }
 
   async function handleDeletePermission(permission) {
+    if (!canDeletePermission) return
     if (!confirm(`Delete permission "${permission.permissionName}"?`)) return
     try {
       await permissionsApi.delete(permission.id)
@@ -158,11 +188,11 @@ export default function UsersApp() {
       {error && <div className="error-banner">{error}</div>}
 
       <nav className="tabs">
-        {['users', 'roles', 'permissions'].map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             type="button"
-            className={activeTab === tab ? 'active' : ''}
+            className={activeVisibleTab === tab ? 'active' : ''}
             onClick={() => setActiveTab(tab)}
           >
             {tab}
@@ -170,30 +200,34 @@ export default function UsersApp() {
         ))}
       </nav>
 
-      {activeTab === 'users' && (
+      {activeVisibleTab === 'users' && canViewUsers && (
         <section className="grid-two admin-grid">
           <div className="panel">
-            <h2>Create user</h2>
-            <form className="panel-form inset" onSubmit={handleCreateUser}>
-              <label>
-                Username
-                <input
-                  value={userForm.username}
-                  onChange={(event) => setUserForm({ ...userForm, username: event.target.value })}
-                  required
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  type="password"
-                  value={userForm.password}
-                  onChange={(event) => setUserForm({ ...userForm, password: event.target.value })}
-                  required
-                />
-              </label>
-              <button type="submit">Create user</button>
-            </form>
+            {canCreateUser && (
+              <>
+                <h2>Create user</h2>
+                <form className="panel-form inset" onSubmit={handleCreateUser}>
+                  <label>
+                    Username
+                    <input
+                      value={userForm.username}
+                      onChange={(event) => setUserForm({ ...userForm, username: event.target.value })}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Password
+                    <input
+                      type="password"
+                      value={userForm.password}
+                      onChange={(event) => setUserForm({ ...userForm, password: event.target.value })}
+                      required
+                    />
+                  </label>
+                  <button type="submit">Create user</button>
+                </form>
+              </>
+            )}
 
             <h2>Users</h2>
             <div className="list-stack">
@@ -208,17 +242,19 @@ export default function UsersApp() {
                     <strong>{user.username}</strong>
                     <small>{user.roles?.join(', ') || 'No roles'}</small>
                   </span>
-                  <span
-                    role="button"
-                    tabIndex="0"
-                    className="text-danger"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      handleDeleteUser(user)
-                    }}
-                  >
-                    Delete
-                  </span>
+                  {canDeleteUser && (
+                    <span
+                      role="button"
+                      tabIndex="0"
+                      className="text-danger"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleDeleteUser(user)
+                      }}
+                    >
+                      Delete
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -230,14 +266,20 @@ export default function UsersApp() {
               <>
                 <div className="tag-row">
                   {(selectedUser.roles || []).map((role) => (
-                    <button key={role} type="button" className="tag" onClick={() => handleRemoveRole(role)}>
-                      {role} x
-                    </button>
+                    canRemoveRole ? (
+                      <button key={role} type="button" className="tag" onClick={() => handleRemoveRole(role)}>
+                        {role} x
+                      </button>
+                    ) : (
+                      <span key={role} className="tag">
+                        {role}
+                      </span>
+                    )
                   ))}
                   {(selectedUser.roles || []).length === 0 && <p className="muted">No roles assigned.</p>}
                 </div>
                 <div className="list-stack">
-                  {roles.map((role) => {
+                  {canViewRoles && roles.map((role) => {
                     const assigned = selectedUser.roles?.includes(role.roleName)
                     return (
                       <button
@@ -245,7 +287,7 @@ export default function UsersApp() {
                         type="button"
                         className={assigned ? 'list-item active' : 'list-item'}
                         onClick={() => !assigned && handleAssignRole(role.id)}
-                        disabled={assigned}
+                        disabled={assigned || !canAssignRole}
                       >
                         <span>{role.roleName}</span>
                         <small>{assigned ? 'Assigned' : 'Assign'}</small>
@@ -261,17 +303,21 @@ export default function UsersApp() {
         </section>
       )}
 
-      {activeTab === 'roles' && (
+      {activeVisibleTab === 'roles' && canViewRoles && (
         <section className="grid-two admin-grid">
           <div className="panel">
-            <h2>Create role</h2>
-            <form className="panel-form inset" onSubmit={handleCreateRole}>
-              <label>
-                Role name
-                <input value={roleName} onChange={(event) => setRoleName(event.target.value)} required />
-              </label>
-              <button type="submit">Create role</button>
-            </form>
+            {canCreateRole && (
+              <>
+                <h2>Create role</h2>
+                <form className="panel-form inset" onSubmit={handleCreateRole}>
+                  <label>
+                    Role name
+                    <input value={roleName} onChange={(event) => setRoleName(event.target.value)} required />
+                  </label>
+                  <button type="submit">Create role</button>
+                </form>
+              </>
+            )}
 
             <h2>Roles</h2>
             <div className="list-stack">
@@ -286,17 +332,19 @@ export default function UsersApp() {
                     <strong>{role.roleName}</strong>
                     <small>{role.permissions?.length || 0} permissions</small>
                   </span>
-                  <span
-                    role="button"
-                    tabIndex="0"
-                    className="text-danger"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      handleDeleteRole(role)
-                    }}
-                  >
-                    Delete
-                  </span>
+                  {canDeleteRole && (
+                    <span
+                      role="button"
+                      tabIndex="0"
+                      className="text-danger"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleDeleteRole(role)
+                      }}
+                    >
+                      Delete
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -311,6 +359,7 @@ export default function UsersApp() {
                     <input
                       type="checkbox"
                       checked={selectedRole.permissions?.includes(permission.permissionName) || false}
+                      disabled={!canAssignPermission && !canRemovePermission}
                       onChange={(event) => handlePermissionToggle(permission, event.target.checked)}
                     />
                     {permission.permissionName}
@@ -324,21 +373,25 @@ export default function UsersApp() {
         </section>
       )}
 
-      {activeTab === 'permissions' && (
+      {activeVisibleTab === 'permissions' && canViewPermissions && (
         <section className="grid-two">
           <div className="panel">
-            <h2>Create permission</h2>
-            <form className="panel-form inset" onSubmit={handleCreatePermission}>
-              <label>
-                Permission name
-                <input
-                  value={permissionName}
-                  onChange={(event) => setPermissionName(event.target.value)}
-                  required
-                />
-              </label>
-              <button type="submit">Create permission</button>
-            </form>
+            {canCreatePermission && (
+              <>
+                <h2>Create permission</h2>
+                <form className="panel-form inset" onSubmit={handleCreatePermission}>
+                  <label>
+                    Permission name
+                    <input
+                      value={permissionName}
+                      onChange={(event) => setPermissionName(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <button type="submit">Create permission</button>
+                </form>
+              </>
+            )}
           </div>
 
           <div className="panel">
@@ -347,9 +400,11 @@ export default function UsersApp() {
               {permissions.map((permission) => (
                 <div key={permission.id} className="list-item static">
                   <span>{permission.permissionName}</span>
-                  <button type="button" className="danger" onClick={() => handleDeletePermission(permission)}>
-                    Delete
-                  </button>
+                  {canDeletePermission && (
+                    <button type="button" className="danger" onClick={() => handleDeletePermission(permission)}>
+                      Delete
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

@@ -20,9 +20,15 @@ namespace notcobase.Controllers
         }
 
         [HttpGet]
-        // [Permission("permissions.view")]
+        [Authorize]
         public async Task<IActionResult> GetPermissions()
         {
+            if (!User.HasClaim("permission", "permissions.view") &&
+                !User.HasClaim("permission", "pages.editor"))
+            {
+                return Forbid();
+            }
+
             var permissions = await _context.Permissions
                 .Select(p => new
                 {
@@ -35,7 +41,7 @@ namespace notcobase.Controllers
         }
 
         [HttpGet("{id}")]
-        // [Permission("permissions.view")]
+        [Permission("permissions.view")]
         public async Task<IActionResult> GetPermission(int id)
         {
             var permission = await _context.Permissions

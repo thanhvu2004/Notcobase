@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using notcobase.Authorization;
 using notcobase.Data;
 using notcobase.Models;
 using System.Text.Json;
@@ -21,6 +22,7 @@ public class LowCodePagesController : ControllerBase
     }
 
     [HttpGet]
+    [Permission("pages.view")]
     public async Task<ActionResult<IEnumerable<LowCodePageDto>>> GetPages()
     {
         var pages = await _context.LowCodePages
@@ -32,6 +34,7 @@ public class LowCodePagesController : ControllerBase
                 Name = p.Name,
                 Slug = p.Slug,
                 SectionName = p.SectionName,
+                RequiredPermission = p.RequiredPermission,
                 SchemaJson = p.SchemaJson,
                 IsPublished = p.IsPublished,
                 CreatedAt = p.CreatedAt,
@@ -43,6 +46,7 @@ public class LowCodePagesController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [Permission("pages.view")]
     public async Task<ActionResult<LowCodePageDto>> GetPage(int id)
     {
         var page = await _context.LowCodePages
@@ -58,6 +62,7 @@ public class LowCodePagesController : ControllerBase
     }
 
     [HttpPost]
+    [Permission("pages.editor")]
     public async Task<ActionResult<LowCodePageDto>> CreatePage(LowCodePageRequest request)
     {
         var validation = ValidateRequest(request);
@@ -71,6 +76,7 @@ public class LowCodePagesController : ControllerBase
             Name = request.Name.Trim(),
             Slug = await BuildUniqueSlug(request.Name),
             SectionName = NormalizeSectionName(request.SectionName),
+            RequiredPermission = NormalizePermissionName(request.RequiredPermission),
             SchemaJson = request.SchemaJson,
             IsPublished = request.IsPublished,
         };
@@ -82,6 +88,7 @@ public class LowCodePagesController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Permission("pages.editor")]
     public async Task<ActionResult<LowCodePageDto>> UpdatePage(int id, LowCodePageRequest request)
     {
         var validation = ValidateRequest(request);
@@ -98,6 +105,7 @@ public class LowCodePagesController : ControllerBase
 
         page.Name = request.Name.Trim();
         page.SectionName = NormalizeSectionName(request.SectionName);
+        page.RequiredPermission = NormalizePermissionName(request.RequiredPermission);
         page.SchemaJson = request.SchemaJson;
         page.IsPublished = request.IsPublished;
         page.UpdatedAt = DateTime.UtcNow;
@@ -107,6 +115,7 @@ public class LowCodePagesController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Permission("pages.editor")]
     public async Task<IActionResult> DeletePage(int id)
     {
         var page = await _context.LowCodePages.FirstOrDefaultAsync(p => p.Id == id);
@@ -169,6 +178,12 @@ public class LowCodePagesController : ControllerBase
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
+    private static string? NormalizePermissionName(string? permissionName)
+    {
+        var trimmed = permissionName?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
     private static LowCodePageDto ToDto(LowCodePage page)
     {
         return new LowCodePageDto
@@ -177,6 +192,7 @@ public class LowCodePagesController : ControllerBase
             Name = page.Name,
             Slug = page.Slug,
             SectionName = page.SectionName,
+            RequiredPermission = page.RequiredPermission,
             SchemaJson = page.SchemaJson,
             IsPublished = page.IsPublished,
             CreatedAt = page.CreatedAt,
@@ -189,6 +205,7 @@ public class LowCodePageRequest
 {
     public required string Name { get; set; }
     public string? SectionName { get; set; }
+    public string? RequiredPermission { get; set; }
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
 }
@@ -199,6 +216,7 @@ public class LowCodePageDto
     public required string Name { get; set; }
     public string? Slug { get; set; }
     public string? SectionName { get; set; }
+    public string? RequiredPermission { get; set; }
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }

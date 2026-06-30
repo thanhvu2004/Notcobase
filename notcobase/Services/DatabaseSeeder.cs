@@ -39,6 +39,8 @@ public class DatabaseSeeder
             "permissions.delete",
             "permissions.assign",
             "permissions.remove",
+            "pages.view",
+            "pages.editor",
             "tables.view",
             "tables.create",
             "tables.edit",
