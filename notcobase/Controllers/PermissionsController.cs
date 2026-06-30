@@ -20,9 +20,15 @@ namespace notcobase.Controllers
         }
 
         [HttpGet]
-        [Permission("permissions.view")]
+        [Authorize]
         public async Task<IActionResult> GetPermissions()
         {
+            if (!User.HasClaim("permission", "permissions.view") &&
+                !User.HasClaim("permission", "pages.editor"))
+            {
+                return Forbid();
+            }
+
             var permissions = await _context.Permissions
                 .Select(p => new
                 {

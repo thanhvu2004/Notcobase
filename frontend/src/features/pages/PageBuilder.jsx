@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import 'antd/dist/reset.css'
 import { deletePage, fetchPage, updatePage } from './pagesApi'
 import { fetchTableDetails, fetchTables } from '../tables/tablesApi'
+import { permissionsApi } from '../users/usersApi'
 import { blockComponents, componentTypes, defaultSchema, fieldComponents } from './pageBuilder/constants'
 import {
   collectFieldOptions,
@@ -15,7 +16,7 @@ import { createId, createNode, findNode, insertNode, moveNode, moveNodeToPositio
 import { renderNode } from './pageBuilder/runtimeRenderer'
 import TreeNode from './pageBuilder/TreeNode'
 
-export default function PageBuilder({ pageId, pages = [], editorMode, onPagesChanged, onNavigate }) {
+export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate }) {
   const [page, setPage] = useState(null)
   const [schema, setSchema] = useState(defaultSchema)
   const [selectedNodeId, setSelectedNodeId] = useState(null)
@@ -23,6 +24,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [tables, setTables] = useState([])
+  const [permissions, setPermissions] = useState([])
   const [tableDetailsById, setTableDetailsById] = useState({})
   const [dragState, setDragState] = useState(null)
 
@@ -49,17 +51,31 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
 
   useEffect(() => {
     let ignore = false
-    fetchTables()
-      .then((nextTables) => {
+
+    if (!editorMode) {
+      setTables([])
+      setPermissions([])
+      return () => {
+        ignore = true
+      }
+    }
+
+    Promise.all([
+      (can('tables.view') ? fetchTables() : Promise.resolve([])).then((nextTables) => {
         if (!ignore) setTables(nextTables)
-      })
-      .catch((err) => {
-        if (!ignore) setError(err.message)
-      })
+      }),
+      (can('permissions.view') || can('pages.editor') ? permissionsApi.list() : Promise.resolve([])).then((nextPermissions) => {
+        if (!ignore) setPermissions(nextPermissions)
+      }).catch(() => {
+        if (!ignore) setPermissions([])
+      }),
+    ]).catch((err) => {
+      if (!ignore) setError(err.message)
+    })
     return () => {
       ignore = true
     }
-  }, [])
+  }, [editorMode, can])
 
   useEffect(() => {
     const tableIds = new Set()
@@ -83,11 +99,27 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
 
     Array.from(tableIds).forEach((tableId) => {
       if (tableDetailsById[tableId]) return
+      if (!editorMode && (!can('columns.view') || !can('records.view'))) {
+        setTableDetailsById((current) => ({
+          ...current,
+          [tableId]: { columns: [], records: [], forbidden: true },
+        }))
+        return
+      }
       fetchTableDetails(tableId)
         .then((details) => setTableDetailsById((current) => ({ ...current, [tableId]: details })))
-        .catch((err) => setError(err.message))
+        .catch((err) => {
+          if (err.status === 403) {
+            setTableDetailsById((current) => ({
+              ...current,
+              [tableId]: { columns: [], records: [], forbidden: true },
+            }))
+            return
+          }
+          setError(err.message)
+        })
     })
-  }, [schema, tableDetailsById])
+  }, [schema, tableDetailsById, editorMode, can])
 
   async function reloadTableDetails(tableId) {
     const details = await fetchTableDetails(tableId)
@@ -113,6 +145,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
       const updated = await updatePage(page.id, {
         name: page.name,
         sectionName: page.sectionName,
+        requiredPermission: page.requiredPermission,
         schemaJson: JSON.stringify(schema),
         isPublished: true,
       })
@@ -297,6 +330,20 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
             <label>
               Page name
               <input value={page.name} onChange={(event) => setPage({ ...page, name: event.target.value })} />
+            </label>
+            <label>
+              Required permission
+              <select
+                value={page.requiredPermission || ''}
+                onChange={(event) => setPage({ ...page, requiredPermission: event.target.value || null })}
+              >
+                <option value="">Public to signed-in users</option>
+                {permissions.map((permission) => (
+                  <option key={permission.id} value={permission.permissionName}>
+                    {permission.permissionName}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="button-row">
               <button type="button" disabled={saving} onClick={savePage}>{saving ? 'Saving...' : 'Save'}</button>

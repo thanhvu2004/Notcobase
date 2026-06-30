@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import LoginPage from './features/auth/LoginPage'
 import PageBuilder from './features/pages/PageBuilder'
 import { createDefaultPageSchema, createPage, fetchPages, movePageToSection } from './features/pages/pagesApi'
@@ -48,7 +48,9 @@ export default function App() {
   })
 
   const isAuthenticated = Boolean(localStorage.getItem('jwtToken'))
-  const can = createPermissionChecker(user)
+  const can = useMemo(() => createPermissionChecker(user), [user])
+  const canEditPages = can('pages.editor')
+  const activeEditorMode = editorMode && canEditPages
 
   const loadPages = useCallback(async () => {
     try {
@@ -69,6 +71,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('notcobase:editor-mode', String(editorMode))
   }, [editorMode])
+
+  useEffect(() => {
+    if (editorMode && !canEditPages) {
+      setEditorMode(false)
+    }
+  }, [canEditPages, editorMode])
 
   useEffect(() => {
     localStorage.setItem('notcobase:page-sections', JSON.stringify(customSections))
@@ -96,6 +104,7 @@ export default function App() {
   }, [])
 
   async function handleCreatePage(sectionName = '') {
+    if (!canEditPages) return
     const name = window.prompt('Page name', 'New page')
     if (!name?.trim()) return
 
@@ -104,6 +113,7 @@ export default function App() {
       const created = await createPage({
         name: name.trim(),
         sectionName: sectionName || null,
+        requiredPermission: null,
         schemaJson: JSON.stringify(createDefaultPageSchema(name.trim())),
         isPublished: true,
       })
@@ -122,6 +132,7 @@ export default function App() {
   }
 
   async function handleCreateSection() {
+    if (!canEditPages) return
     const sectionName = window.prompt('Section name', 'New section')
     if (!sectionName?.trim()) return
     const nextSectionName = sectionName.trim()
@@ -132,6 +143,7 @@ export default function App() {
   }
 
   async function updatePageSection(pageId, sectionName) {
+    if (!canEditPages) return null
     const page = pages.find((item) => item.id === Number(pageId))
     if (!page || (page.sectionName || '') === (sectionName || '')) {
       return page
@@ -197,7 +209,7 @@ export default function App() {
   }
 
   function handleNavDragOver(target, event) {
-    if (!editorMode) return
+    if (!activeEditorMode) return
     const dragged = getNavDragPayload(event)
     if (!dragged || dragged.orderKey === target.orderKey) return
 
@@ -221,6 +233,7 @@ export default function App() {
   async function handleNavDrop(target, event) {
     event.preventDefault()
     event.stopPropagation()
+    if (!activeEditorMode) return
     const dragged = getNavDragPayload(event)
     if (!dragged) {
       return
@@ -260,6 +273,7 @@ export default function App() {
   }
 
   async function handleRemoveSection(sectionName) {
+    if (!canEditPages) return
     if (!window.confirm(`Remove section "${sectionName}"? Pages inside will move outside.`)) return
     try {
       const sectionPages = pages.filter((page) => page.sectionName === sectionName)
@@ -285,9 +299,11 @@ export default function App() {
   }
 
   function handleEditorModeChange(nextEditorMode) {
-    setEditorMode(nextEditorMode)
-    if (!nextEditorMode && !route.startsWith('page:') && pages[0]) {
-      navigateRoute(`page:${pages[0].id}`)
+    const allowedEditorMode = canEditPages && nextEditorMode
+    setEditorMode(allowedEditorMode)
+    const firstAllowedPage = pages.find((page) => !page.requiredPermission || can(page.requiredPermission))
+    if (!allowedEditorMode && !route.startsWith('page:') && firstAllowedPage) {
+      navigateRoute(`page:${firstAllowedPage.id}`)
     }
   }
 
@@ -312,10 +328,16 @@ export default function App() {
   }
 
   function handleNavigate({ targetPageId, params = {} } = {}) {
-    if (editorMode) return false
+    if (activeEditorMode) return false
 
     if (!targetPageId) {
       setError('Select a target page first.')
+      return false
+    }
+
+    const targetPage = pages.find((page) => page.id === Number(targetPageId))
+    if (targetPage?.requiredPermission && !can(targetPage.requiredPermission)) {
+      setError('You do not have permission to view the target page.')
       return false
     }
 
@@ -338,11 +360,15 @@ export default function App() {
   }
 
   const routedPageId = route.startsWith('page:') ? Number(route.slice(5)) : null
-  const activePage = pages.find((page) => page.id === routedPageId) || (!editorMode ? pages[0] : null)
+  const canAccessPage = (page) => !page?.requiredPermission || can(page.requiredPermission)
+  const visiblePages = activeEditorMode ? pages : pages.filter(canAccessPage)
+  const routedPage = pages.find((page) => page.id === routedPageId)
+  const routedPageDenied = !activeEditorMode && routedPage && !canAccessPage(routedPage)
+  const activePage = visiblePages.find((page) => page.id === routedPageId) || (!activeEditorMode ? visiblePages[0] : null)
   const activePageId = activePage?.id ?? routedPageId
-  const sectionNames = normalizeSectionList([...customSections, ...pages.map((page) => page.sectionName)])
+  const sectionNames = normalizeSectionList([...customSections, ...visiblePages.map((page) => page.sectionName)])
   const knownOrderKeys = [
-    ...pages.map((page) => `page:${page.id}`),
+    ...visiblePages.map((page) => `page:${page.id}`),
     ...sectionNames.map((sectionName) => `section:${sectionName}`),
   ]
   const normalizedNavOrder = [
@@ -350,15 +376,17 @@ export default function App() {
     ...knownOrderKeys.filter((item) => !navOrder.includes(item)),
   ]
   const sortByNavOrder = (left, right) => normalizedNavOrder.indexOf(left) - normalizedNavOrder.indexOf(right)
-  const unsectionedPages = pages
+  const unsectionedPages = visiblePages
     .filter((page) => !page.sectionName)
     .sort((left, right) => sortByNavOrder(`page:${left.id}`, `page:${right.id}`))
   const pagesBySection = sectionNames.map((sectionName) => ({
     sectionName,
-    pages: pages
+    pages: visiblePages
       .filter((page) => page.sectionName === sectionName)
       .sort((left, right) => sortByNavOrder(`page:${left.id}`, `page:${right.id}`)),
-  })).sort((left, right) => sortByNavOrder(`section:${left.sectionName}`, `section:${right.sectionName}`))
+  }))
+    .filter((section) => activeEditorMode || section.pages.length > 0)
+    .sort((left, right) => sortByNavOrder(`section:${left.sectionName}`, `section:${right.sectionName}`))
 
   const systemMenuItems = [
     can('tables.view') && {
@@ -392,7 +420,7 @@ export default function App() {
         <button
           type="button"
           className="brand-button"
-          onClick={() => navigateRoute(editorMode ? 'tables' : pages[0] ? `page:${pages[0].id}` : route)}
+          onClick={() => navigateRoute(activeEditorMode ? 'tables' : visiblePages[0] ? `page:${visiblePages[0].id}` : route)}
         >
           Notcobase
         </button>
@@ -402,7 +430,7 @@ export default function App() {
               key={page.id}
               type="button"
               className={`${activePageId === page.id ? 'active' : ''}${getNavDropClass({ type: 'root', orderKey: `page:${page.id}` })}`}
-              draggable={editorMode}
+              draggable={activeEditorMode}
               onDragStart={(event) => startNavDrag(event, { type: 'page', pageId: page.id, orderKey: `page:${page.id}` })}
               onDragOver={(event) => handleNavDragOver({ type: 'root', orderKey: `page:${page.id}`, axis: 'horizontal' }, event)}
               onDragLeave={() => setNavDropTarget(null)}
@@ -424,7 +452,7 @@ export default function App() {
               <button
                 type="button"
                 className={`${section.pages.some((page) => page.id === activePageId) ? 'active' : ''}${getNavDropClass({ type: 'section', orderKey: `section:${section.sectionName}` })}`}
-                draggable={editorMode}
+                draggable={activeEditorMode}
                 onDragStart={(event) => startNavDrag(event, { type: 'section', sectionName: section.sectionName, orderKey: `section:${section.sectionName}` })}
                 onDragOver={(event) => handleNavDragOver({ type: 'section', sectionName: section.sectionName, orderKey: `section:${section.sectionName}`, axis: 'horizontal' }, event)}
                 onDragLeave={() => setNavDropTarget(null)}
@@ -444,7 +472,7 @@ export default function App() {
                       key={page.id}
                       type="button"
                       className={`${activePageId === page.id ? 'active' : ''}${getNavDropClass({ type: 'page', orderKey: `page:${page.id}` })}`}
-                      draggable={editorMode}
+                      draggable={activeEditorMode}
                       onDragStart={(event) => startNavDrag(event, { type: 'page', pageId: page.id, orderKey: `page:${page.id}` })}
                       onDragOver={(event) => handleNavDragOver({ type: 'page', pageId: page.id, sectionName: section.sectionName, orderKey: `page:${page.id}`, axis: 'vertical' }, event)}
                       onDragLeave={() => setNavDropTarget(null)}
@@ -458,12 +486,12 @@ export default function App() {
                       {page.name}
                     </button>
                   ))}
-                  {editorMode && <button type="button" className="danger" onClick={() => handleRemoveSection(section.sectionName)}>Remove</button>}
+                  {activeEditorMode && <button type="button" className="danger" onClick={() => handleRemoveSection(section.sectionName)}>Remove</button>}
                 </div>
               )}
             </div>
           ))}
-          {editorMode && (
+          {activeEditorMode && (
             <Dropdown menu={{ items: AddMenuItems }} trigger={['hover']}>
               <button
                 type="button"
@@ -477,16 +505,18 @@ export default function App() {
           )}
         </nav>
         <div className="session-controls">
-          <label className="editor-mode-toggle">
-            <input className="custom-checkbox" type="checkbox" checked={editorMode} onChange={(event) => handleEditorModeChange(event.target.checked)} />
-            Editor Mode
-          </label>
+          {canEditPages && (
+            <label className="editor-mode-toggle">
+              <input className="custom-checkbox" type="checkbox" checked={activeEditorMode} onChange={(event) => handleEditorModeChange(event.target.checked)} />
+              Editor Mode
+            </label>
+          )}
           <Dropdown menu={{ items: systemMenuItems }} trigger={['hover']}>
             <button
               type="button"
               className={route === 'tables' || route === 'users' ? 'active' : ''}
             >
-              {user?.username} <DownOutlined />
+              {user?.username} {can('users.view', 'roles.view', 'permissions.view') ? (<DownOutlined />) : (<></>)}
             </button>
           </Dropdown>
           <button type="button" className="secondary" onClick={handleLogout}>
@@ -519,15 +549,22 @@ export default function App() {
             </section>
           </main>
         )
-      ) : !editorMode && pages.length === 0 ? (
+      ) : !activeEditorMode && visiblePages.length === 0 ? (
         <main className="page-content">
           <section className="empty-state">
             <h2>No pages yet</h2>
-            <p>Turn on Editor Mode to create the first page.</p>
+            <p>No pages are available for your account.</p>
+          </section>
+        </main>
+      ) : routedPageDenied ? (
+        <main className="page-content">
+          <section className="empty-state">
+            <h2>Access denied</h2>
+            <p>You do not have permission to view this page.</p>
           </section>
         </main>
       ) : activePage ? (
-        <PageBuilder pageId={activePage.id} pages={pages} editorMode={editorMode} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
+        <PageBuilder pageId={activePage.id} pages={pages} editorMode={activeEditorMode} can={can} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
       ) : activePageId ? (
         <main className="page-content">
           <section className="empty-state">

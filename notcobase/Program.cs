@@ -124,6 +124,7 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA table_info('LowCodePages');";
         var hasSectionName = false;
+        var hasRequiredPermission = false;
         await using (var reader = await command.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
@@ -131,7 +132,11 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
                 if (string.Equals(reader.GetString(1), "SectionName", StringComparison.OrdinalIgnoreCase))
                 {
                     hasSectionName = true;
-                    break;
+                }
+
+                if (string.Equals(reader.GetString(1), "RequiredPermission", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasRequiredPermission = true;
                 }
             }
         }
@@ -139,6 +144,11 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
         if (!hasSectionName)
         {
             await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN SectionName TEXT NULL;");
+        }
+
+        if (!hasRequiredPermission)
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN RequiredPermission TEXT NULL;");
         }
     }
     finally
