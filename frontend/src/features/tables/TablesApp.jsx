@@ -121,12 +121,18 @@ function getRecordValue(record, columnName) {
 }
 
 function Modal({ title, children, onClose }) {
+  function handleClose(event) {
+    event?.preventDefault()
+    event?.stopPropagation()
+    onClose?.()
+  }
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={handleClose}>
       <section className="modal-panel" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal-header">
           <h2>{title}</h2>
-          <button type="button" className="secondary icon-button" onClick={onClose} aria-label="Close">
+          <button type="button" className="secondary icon-button" onMouseDown={(event) => event.stopPropagation()} onClick={handleClose} aria-label="Close">
             x
           </button>
         </header>
@@ -248,7 +254,7 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
           </label>
         )}
         <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" disabled={saving || (form.inheritProperties && !form.parentTableId)}>
@@ -444,7 +450,7 @@ function RecordModal({ title, columns, form, setForm, saving, onSubmit, onClose 
           </label>
         ))}
         <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" disabled={saving || formColumns.length === 0}>

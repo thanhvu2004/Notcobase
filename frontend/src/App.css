@@ -23,6 +23,10 @@ textarea {
   font: inherit;
 }
 
+select:disabled {
+  color: #94a3b8;
+}
+
 button {
   border: 1px solid #2563eb;
   border-radius: 6px;
@@ -1169,7 +1173,6 @@ th {
   justify-content: flex-end;
   border-top: 1px solid #e2e8f0;
   border-bottom: 0;
-  margin: 0 -1rem -1rem;
 }
 
 .icon-button {

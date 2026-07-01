@@ -12,9 +12,9 @@ import {
   parseProps,
 } from './pageBuilder/dataUtils'
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
-import { createId, createNode, findNode, insertNode, moveNode, moveNodeToPosition, normalizeSchema, removeNode, updateNode } from './pageBuilder/schemaUtils'
+import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
-import TreeNode from './pageBuilder/TreeNode'
+// import TreeNode from './pageBuilder/TreeNode'
 
 export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate }) {
   const [page, setPage] = useState(null)
@@ -364,6 +364,8 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             </div>
           </section>
 
+{/*       TreeNode being too laggy for some reason  */}
+{/* 
           <section className="panel">
             <div className="panel page-tree">
               <h3>Arrange</h3>
@@ -374,7 +376,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
               <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
               {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
             </div>
-          </section>
+          </section> */}
 
           <section className="panel">
             <h3>Configure</h3>
@@ -565,6 +567,24 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                     <label>
                       Submit label
                       <input value={selected['x-component-props']?.submitLabel || 'Save'} onChange={(event) => patchSelectedProps({ submitLabel: event.target.value })} />
+                    </label>
+                    <label>
+                      After save
+                      <select value={selected['x-component-props']?.saveAction || 'none'} onChange={(event) => patchSelectedProps({ saveAction: event.target.value })}>
+                        <option value="none">Stay on page</option>
+                        <option value="navigate">Navigate to page</option>
+                      </select>
+                    </label>
+                    <label>
+                      Save target page
+                      <select disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={selected['x-component-props']?.saveTargetPageId || ''} onChange={(event) => patchSelectedProps({ saveTargetPageId: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">Select page</option>
+                        {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Save navigation params JSON
+                      <textarea rows="3" disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.saveNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('saveNavigationParams', event.target.value)} />
                     </label>
                     <label className="check-row">
                       <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.useFormGroup)} onChange={(event) => patchSelectedProps({ useFormGroup: event.target.checked })} />
