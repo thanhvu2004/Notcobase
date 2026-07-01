@@ -50,6 +50,9 @@ public class AppDbContext : DbContext
             .Property(c => c.FieldType)
             .HasMaxLength(50);
 
+        modelBuilder.Entity<Column>()
+            .HasIndex(c => new { c.TableId, c.SortOrder });
+
         modelBuilder.Entity<LowCodePage>()
             .Property(p => p.Name)
             .HasMaxLength(255);

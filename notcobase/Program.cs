@@ -13,17 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Controllers
 builder.Services.AddControllers();
 
-// Razor Pages
-builder.Services.AddRazorPages();
-
-// Session
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-});
-
 // HttpClient
 builder.Services.AddHttpClient();
 
@@ -97,16 +86,12 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseExceptionHandler("/Error");
+    app.UseExceptionHandler("/api/error");
     app.UseHsts();
 }
 
 // HTTPS
 app.UseHttpsRedirection();
-// Static Files
-app.UseStaticFiles();
-// Session
-app.UseSession();
 // Routing
 app.UseRouting();
 // Authentication
@@ -116,13 +101,48 @@ app.UseAuthorization();
 
 // ENDPOINTS
 app.MapControllers();
-app.MapRazorPages();
+app.Map("/api/error", () => Results.Problem());
 
 // Seed database
 using (var scope = app.Services.CreateScope())
 {
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await EnsurePageNavigationColumnsAsync(context);
+
     var seeder = scope.ServiceProvider.GetRequiredService<notcobase.Services.DatabaseSeeder>();
     await seeder.SeedAsync();
 }
 
 app.Run();
+
+static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
+{
+    var connection = context.Database.GetDbConnection();
+    await connection.OpenAsync();
+    try
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info('LowCodePages');";
+        var hasSectionName = false;
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                if (string.Equals(reader.GetString(1), "SectionName", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasSectionName = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasSectionName)
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN SectionName TEXT NULL;");
+        }
+    }
+    finally
+    {
+        await connection.CloseAsync();
+    }
+}

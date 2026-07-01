@@ -176,7 +176,8 @@ public class RecordsController : ControllerBase
             var rootPhysicalName = _dynamicTableService.GetPhysicalTableName(rootTable.Id);
             var rootColumns = rootTable.Columns
                 .Where(c => validData.ContainsKey(c.Name))
-                .OrderBy(c => c.Id)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Id)
                 .ToList();
 
             var rootColumnNames = string.Join(", ", rootColumns.Select(c => $"[{c.Name}]"));
@@ -210,7 +211,8 @@ public class RecordsController : ControllerBase
                     var physicalTableName = _dynamicTableService.GetPhysicalTableName(currentTable.Id);
                     var currentColumns = currentTable.Columns
                         .Where(c => validData.ContainsKey(c.Name))
-                        .OrderBy(c => c.Id)
+                        .OrderBy(c => c.SortOrder)
+                        .ThenBy(c => c.Id)
                         .ToList();
 
                     var insertColumns = new List<string> { "Id" };

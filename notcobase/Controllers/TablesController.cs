@@ -98,6 +98,7 @@ public class TablesController : ControllerBase
                 IsRequired = c.IsRequired,
                 TableId = c.TableId,
                 IsInherited = c.TableId != table.Id,
+                SortOrder = c.SortOrder,
                 ComponentDefinitionId = c.ComponentDefinitionId,
                 ComponentPropsJson = c.ComponentPropsJson,
             }).ToList(),
@@ -310,6 +311,7 @@ public class TablesController : ControllerBase
                 var usedColumnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var columnMappings = new List<ImportColumnMapping>();
 
+                var sortOrder = 1;
                 foreach (var sourceColumn in sourceColumns)
                 {
                     var columnName = MakeUniqueName(SanitizeIdentifier(sourceColumn.Name, "Column"), usedColumnNames);
@@ -320,11 +322,13 @@ public class TablesController : ControllerBase
                         Name = columnName,
                         FieldType = MapSqliteTypeToFieldType(sourceColumn.Type),
                         IsRequired = sourceColumn.NotNull,
-                        TableId = table.Id
+                        TableId = table.Id,
+                        SortOrder = sortOrder
                     };
 
                     _context.Columns.Add(column);
                     columnMappings.Add(new ImportColumnMapping(sourceColumn.Name, columnName));
+                    sortOrder += 1;
                 }
 
                 await _context.SaveChangesAsync();
@@ -497,6 +501,7 @@ public class TablesController : ControllerBase
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .OrderBy(c => c.TableId == table.Id ? 1 : 0)
+            .ThenBy(c => c.SortOrder)
             .ThenBy(c => c.Id)
             .ToList();
     }
@@ -805,6 +810,7 @@ public class ColumnDto
     public bool IsRequired { get; set; }
     public int TableId { get; set; }
     public bool IsInherited { get; set; }
+    public int SortOrder { get; set; }
     public int? ComponentDefinitionId { get; set; }
     public string ComponentPropsJson { get; set; } = "{}";
 }

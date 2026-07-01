@@ -141,7 +141,7 @@ public class DynamicTableService
             columnDefinitions.Add("Id INTEGER PRIMARY KEY AUTOINCREMENT");
         }
 
-        foreach (var column in table.Columns.OrderBy(c => c.Id))
+        foreach (var column in OrderColumns(table.Columns))
         {
             columnDefinitions.Add(BuildColumnDefinition(column));
         }
@@ -169,7 +169,7 @@ public class DynamicTableService
         if (!rootTable.PhysicalTableCreated)
             return;
 
-        var ownColumns = rootTable.Columns.OrderBy(c => c.Id).ToList();
+        var ownColumns = OrderColumns(rootTable.Columns).ToList();
         await RebuildPhysicalTableAsync(rootTableId, ownColumns, isDerived: false);
     }
 
@@ -248,7 +248,7 @@ public class DynamicTableService
         if (!table.PhysicalTableCreated)
             return true;
 
-        var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+        var ownColumns = OrderColumns(table.Columns).ToList();
         await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue);
 
         table.UpdatedAt = DateTime.UtcNow;
@@ -276,7 +276,7 @@ public class DynamicTableService
 
         if (table.PhysicalTableCreated)
         {
-            var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+            var ownColumns = OrderColumns(table.Columns).ToList();
             await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
         }
 
@@ -296,7 +296,7 @@ public class DynamicTableService
         if (!table.PhysicalTableCreated)
             return true;
 
-        var ownColumns = table.Columns.OrderBy(c => c.Id).ToList();
+        var ownColumns = OrderColumns(table.Columns).ToList();
         await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId, oldName, updatedColumn.Name);
 
         foreach (var hierarchyTable in GetHierarchyTables(table.Id, tableMap))
@@ -324,7 +324,8 @@ public class DynamicTableService
 
         var ownColumns = table.Columns
             .Where(c => c.Id != column.Id)
-            .OrderBy(c => c.Id)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.Id)
             .ToList();
 
         await RebuildPhysicalTableAsync(table.Id, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
@@ -346,7 +347,8 @@ public class DynamicTableService
 
         var ownColumns = table.Columns
             .Where(c => !string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(c => c.Id)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.Id)
             .ToList();
 
         await RebuildPhysicalTableAsync(tableId, ownColumns, table.InheritProperties && table.ParentTableId.HasValue, table.ParentTableId);
@@ -428,7 +430,7 @@ public class DynamicTableService
             result.AddRange(GetEffectiveColumns(parentTable, allTables, replacementColumn, excludedColumnId));
         }
 
-        result.AddRange(table.Columns);
+        result.AddRange(OrderColumns(table.Columns));
 
         return result
             .Where(c => c.Id != excludedColumnId)
@@ -436,6 +438,13 @@ public class DynamicTableService
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .ToList();
+    }
+
+    private static IOrderedEnumerable<Column> OrderColumns(IEnumerable<Column> columns)
+    {
+        return columns
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.Id);
     }
 
     private int GetRootTableId(Table table, Dictionary<int, Table> allTables)
