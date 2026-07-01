@@ -438,6 +438,9 @@ label {
 }
 
 .page-content {
+  min-width: 0;
+  max-width: 100vw;
+  overflow-x: hidden;
   padding: 1.5rem;
 }
 
@@ -672,11 +675,15 @@ label {
 }
 
 .data-grid-shell {
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   min-height: 540px;
 }
 
 .data-grid-shell .MuiDataGrid-root {
+  min-width: 0;
+  max-width: 100%;
   border-color: #d9e2ec;
   background: #ffffff;
 }
@@ -686,6 +693,15 @@ label {
   display: flex;
   padding-bottom: 0.45rem;
   padding-top: 0.45rem;
+}
+
+.table-block-grid {
+  margin-top: 1rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 420px;
+  overflow: hidden;
 }
 
 .page-builder-shell {
@@ -714,12 +730,16 @@ label {
 
 .page-builder-canvas {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   padding: 1.5rem;
 }
 
 .page-container {
   display: grid;
   gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
   min-height: calc(100vh - 150px);
 }
 
@@ -733,7 +753,13 @@ label {
 }
 
 .page-section-collapse {
+  min-width: 0;
+  max-width: 100%;
   margin-top: 1rem;
+}
+
+.page-section-collapse .ant-collapse-content-box {
+  min-width: 0;
 }
 
 .page-section h2 {
@@ -743,13 +769,17 @@ label {
 .page-tabs {
   display: grid;
   gap: 0.8rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .page-grid-row {
+  min-width: 0;
   width: 100%;
 }
 
 .page-grid-col {
+  min-width: 0;
   min-height: 2.5rem;
 }
 
@@ -912,6 +942,8 @@ label {
 .rendered-block {
   display: grid;
   gap: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid #d9e2ec;
   border-radius: 8px;
   background: #ffffff;

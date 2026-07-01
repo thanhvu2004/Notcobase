@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
 import { Collapse, Col as AntCol, Divider as AntDivider, Row as AntRow, Select as AntSelect, Tabs as AntTabs, message } from 'antd'
+import { DataGrid, GridToolbar } from '@mui/x-data-grid'
 import { createRecord, updateRecord } from '../../tables/tablesApi'
 import {
   areFormValuesEqual,
@@ -729,6 +730,43 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
       ? tableColumns.filter((column) => props.columns.some((item) => (typeof item === 'string' ? item : item.dataIndex) === column.name))
       : tableColumns
     const records = runtimeData.tableDetailsById[props.tableId]?.records || []
+    const gridRows = records.map((record) => ({
+      id: record.id,
+      __record: record,
+      ...selectedColumns.reduce((values, column) => {
+        values[column.name] = record.data?.[column.name]
+        return values
+      }, {}),
+    }))
+    const gridColumns = [
+      ...selectedColumns.map((column) => ({
+        field: column.name,
+        headerName: column.name,
+        minWidth: 160,
+        flex: 1,
+        sortable: true,
+        renderCell: (params) => formatValue(params.row.__record?.data?.[column.name], column.fieldType, column.componentPropsJson, runtimeData),
+      })),
+      ...(props.allowEdit !== false || props.allowDelete ? [{
+        field: '__actions',
+        headerName: 'Actions',
+        width: 180,
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        renderCell: (params) => (
+          <div className="button-row compact grid-actions" onClick={(event) => event.stopPropagation()}>
+            {props.allowEdit !== false && (
+              <button type="button" className="secondary" onClick={() => openEdit(params.row.__record)}>
+                Edit
+              </button>
+            )}
+            {props.allowDelete && <button type="button" className="danger">Delete</button>}
+          </div>
+        ),
+      }] : []),
+    ]
+
     function openCreate() {
       if (editorMode) return
       if (props.createAction === 'navigate') {
@@ -774,27 +812,21 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
           {props.allowCreate !== false && <button type="button" onClick={openCreate}>New</button>}
         </div>
         {!props.tableId ? <p className="muted">Select a table in block settings.</p> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  {selectedColumns.map((column) => <th key={column.id}>{column.name}</th>)}
-                  {(props.allowEdit !== false || props.allowDelete) && <th>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {records.slice(0, props.pageSize || 10).map((record) => (
-                  <tr key={record.id} className={!editorMode && props.rowClickAction === 'navigate' ? 'clickable-row' : ''} onClick={() => openRow(record)}>
-                    {selectedColumns.map((column) => <td key={column.id}>{formatValue(record.data?.[column.name], column.fieldType, column.componentPropsJson, runtimeData)}</td>)}
-                    {(props.allowEdit !== false || props.allowDelete) && (
-                      <td onClick={(event) => event.stopPropagation()}>
-                        {props.allowEdit !== false && <button type="button" className="secondary" onClick={() => openEdit(record)}>Edit</button>} {props.allowDelete && <button type="button" className="danger">Delete</button>}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="table-block-grid data-grid-shell">
+            <DataGrid
+              rows={gridRows}
+              columns={gridColumns}
+              disableRowSelectionOnClick
+              showToolbar
+              slots={{ toolbar: GridToolbar }}
+              initialState={{
+                pagination: { paginationModel: { pageSize: props.pageSize || 10, page: 0 } },
+              }}
+              pageSizeOptions={[5, 10, 25, 50, 100]}
+              onRowClick={(params) => openRow(params.row.__record)}
+              getRowClassName={() => (!editorMode && props.rowClickAction === 'navigate' ? 'clickable-row' : '')}
+              getRowHeight={() => 'auto'}
+            />
           </div>
         )}
       </div>
