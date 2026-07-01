@@ -74,7 +74,7 @@ export default function App() {
 
   useEffect(() => {
     if (editorMode && !canEditPages) {
-      setEditorMode(false)
+      queueMicrotask(() => setEditorMode(false))
     }
   }, [canEditPages, editorMode])
 

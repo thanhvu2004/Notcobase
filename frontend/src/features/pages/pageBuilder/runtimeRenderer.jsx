@@ -5,6 +5,7 @@ import { DataGrid, GridToolbar } from '@mui/x-data-grid'
 import { createRecord, updateRecord } from '../../tables/tablesApi'
 import {
   areFormValuesEqual,
+  applyGeneratedValues,
   coerceFormValue,
   collectInitialFormValuesFromSchema,
   createInitialFormData,
@@ -242,7 +243,8 @@ function FieldInput({ node, column, formContext, runtimeData }) {
   const fieldName = node['x-field'] || node.name || column?.name
   const component = node['x-component'] || 'Input'
   const value = formContext?.values?.[fieldName]
-  const disabled = props.disabled || formContext?.disabled
+  const generatorLocked = formContext?.mode === 'create' && props.valueGeneratorEnabled && props.valueGeneratorEditable === false
+  const disabled = props.disabled || formContext?.disabled || generatorLocked
   const setValue = (nextValue) => formContext?.setValue(fieldName, nextValue)
   const fieldType = String(column?.fieldType || '').toLowerCase()
 
@@ -366,7 +368,10 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
     () => tableColumns.filter((column) => selectedNames.includes(column.name)),
     [tableColumns, selectedNames],
   )
-  const records = runtimeData.tableDetailsById[tableId]?.records || []
+  const records = useMemo(
+    () => runtimeData.tableDetailsById[tableId]?.records || [],
+    [runtimeData.tableDetailsById, tableId],
+  )
   const urlRecordId = getRecordIdFromLocation(props.recordIdParam)
   const recordId = Number(props.recordId || urlRecordId) || null
   const editingRecord = records.find((record) => record.id === recordId)
@@ -415,19 +420,41 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
     columns: formColumns,
     tableId,
     recordId,
+    mode,
     schema: node,
     disabled,
     setValue(fieldName, nextValue) {
-      updateValues((current) => ({ ...current, [fieldName]: nextValue }))
+      updateValues((current) => {
+        const nextValues = { ...current, [fieldName]: nextValue }
+        if (mode !== 'create') return nextValues
+        return applyGeneratedValues(node, nextValues, records, {
+          overwriteLocked: true,
+          onlyEmptyEditable: false,
+          skipField: fieldName,
+        })
+      })
     },
   }
+
+  useEffect(() => {
+    if (mode !== 'create') return
+    queueMicrotask(() => {
+      setValues((current) => {
+        const nextValues = applyGeneratedValues(node, current, records)
+        return areFormValuesEqual(current, nextValues) ? current : nextValues
+      })
+    })
+  }, [mode, node, records])
 
   async function handleSubmit(event) {
     event.preventDefault()
     if (disabled || !tableId || formColumns.length === 0) return
 
     const submitSnapshot = formGroup?.getSnapshot()
-    const submitValues = formGroup ? { ...(submitSnapshot?.values || {}), ...values } : values
+    const rawSubmitValues = formGroup ? { ...(submitSnapshot?.values || {}), ...values } : values
+    const submitValues = mode === 'create'
+      ? applyGeneratedValues(node, rawSubmitValues, records, { overwriteLocked: true, onlyEmptyEditable: true })
+      : rawSubmitValues
     const submitColumns = formGroup ? submitSnapshot.columns : formColumns
 
     async function saveRelatedDrafts(parentId) {

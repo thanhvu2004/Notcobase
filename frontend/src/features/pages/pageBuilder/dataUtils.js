@@ -133,6 +133,125 @@ export function collectInitialFormValuesFromSchema(node, columns, record, values
   return values
 }
 
+export function getGeneratorConfig(node) {
+  const props = node?.['x-component-props'] || {}
+  const template = String(props.valueGeneratorTemplate || '').trim()
+  if (!props.valueGeneratorEnabled || !template) return null
+  return {
+    template,
+    editable: props.valueGeneratorEditable !== false,
+  }
+}
+
+export function collectValueGeneratorConfigs(node, configs = []) {
+  if (!node || typeof node !== 'object') return configs
+
+  const fieldName = node['x-field'] || node.name
+  const config = getGeneratorConfig(node)
+  if (fieldName && config) {
+    configs.push({ fieldName, node, ...config })
+  }
+
+  Object.values(node.properties || {}).forEach((child) => collectValueGeneratorConfigs(child, configs))
+  return configs
+}
+
+function padSequence(value, width) {
+  return String(value).padStart(width, '0')
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getDateParts(now = new Date()) {
+  const year = String(now.getFullYear())
+  return {
+    YYYY: year,
+    YY: year.slice(-2),
+    MM: String(now.getMonth() + 1).padStart(2, '0'),
+    DD: String(now.getDate()).padStart(2, '0'),
+  }
+}
+
+export function getNextSequence(template, records, fieldName) {
+  const seqMatch = String(template || '').match(/\{seq:(\d+)\}/)
+  if (!seqMatch) return { value: '', width: 0 }
+
+  const width = Math.max(1, Number(seqMatch[1]) || 1)
+  let pattern = '^'
+  let cursor = 0
+  let hasSequenceCapture = false
+  const tokenPattern = /\{([^}]+)\}/g
+  let match
+
+  while ((match = tokenPattern.exec(template)) !== null) {
+    pattern += escapeRegExp(template.slice(cursor, match.index))
+    const token = match[1]
+    const seqToken = token.match(/^seq:(\d+)$/)
+    if (seqToken && !hasSequenceCapture) {
+      pattern += `(\\d{${Math.max(1, Number(seqToken[1]) || 1)}})`
+      hasSequenceCapture = true
+    } else if (seqToken) {
+      pattern += `\\d{${Math.max(1, Number(seqToken[1]) || 1)}}`
+    } else {
+      pattern += '.*?'
+    }
+    cursor = match.index + match[0].length
+  }
+
+  pattern += escapeRegExp(template.slice(cursor))
+  pattern += '$'
+
+  const regex = new RegExp(pattern)
+  const maxSequence = (records || []).reduce((maxValue, record) => {
+    const rawValue = record?.data?.[fieldName]
+    if (rawValue == null || rawValue === '') return maxValue
+    const valueMatch = String(rawValue).match(regex)
+    if (!valueMatch) return maxValue
+    const sequence = Number(valueMatch[1])
+    return Number.isFinite(sequence) ? Math.max(maxValue, sequence) : maxValue
+  }, 0)
+
+  return {
+    value: padSequence(maxSequence + 1, width),
+    width,
+  }
+}
+
+export function resolveGeneratedValue(template, values = {}, records = [], fieldName, now = new Date()) {
+  const dateParts = getDateParts(now)
+  const sequence = getNextSequence(template, records, fieldName).value
+
+  return String(template || '').replace(/\{([^}]+)\}/g, (_, rawToken) => {
+    const token = String(rawToken || '').trim()
+    if (token === 'YY' || token === 'YYYY' || token === 'MM' || token === 'DD') return dateParts[token]
+    if (/^seq:\d+$/.test(token)) return sequence
+
+    const [fieldToken, ...defaultParts] = token.split('|')
+    const sourceField = fieldToken.trim()
+    const fallback = defaultParts.join('|')
+    const value = values[sourceField]
+    return value === undefined || value === null || value === '' ? fallback : String(value)
+  })
+}
+
+export function applyGeneratedValues(schema, values = {}, records = [], { overwriteLocked = true, onlyEmptyEditable = true, skipField = '' } = {}) {
+  const configs = collectValueGeneratorConfigs(schema)
+  if (!configs.length) return values
+
+  const nextValues = { ...(values || {}) }
+  configs.forEach((config) => {
+    if (skipField && config.fieldName === skipField) return
+    if (!overwriteLocked && config.editable) return
+    if (config.editable && onlyEmptyEditable && nextValues[config.fieldName]) return
+    if (!config.editable || !nextValues[config.fieldName] || !onlyEmptyEditable) {
+      nextValues[config.fieldName] = resolveGeneratedValue(config.template, nextValues, records, config.fieldName)
+    }
+  })
+  return nextValues
+}
+
 export function coerceFormValue(value, column) {
   if (column.fieldType === 'number' || column.fieldType === 'finance') {
     return value === '' || value == null ? null : Number(value)

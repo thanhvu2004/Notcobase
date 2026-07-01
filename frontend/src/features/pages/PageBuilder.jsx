@@ -53,8 +53,11 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
     let ignore = false
 
     if (!editorMode) {
-      setTables([])
-      setPermissions([])
+      queueMicrotask(() => {
+        if (ignore) return
+        setTables([])
+        setPermissions([])
+      })
       return () => {
         ignore = true
       }
@@ -856,6 +859,43 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                   <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.hiddenInForms)} onChange={(event) => patchSelectedProps({ hiddenInForms: event.target.checked })} />
                   Hidden in forms
                 </label>
+                {['Input', 'Input.TextArea', 'Textarea'].includes(selected['x-component']) && (
+                  <div className="builder-config-group">
+                    <strong>Value generator</strong>
+                    <label className="check-row">
+                      <input
+                        className="custom-checkbox"
+                        type="checkbox"
+                        checked={Boolean(selected['x-component-props']?.valueGeneratorEnabled)}
+                        onChange={(event) => patchSelectedProps({
+                          valueGeneratorEnabled: event.target.checked,
+                          valueGeneratorEditable: selected['x-component-props']?.valueGeneratorEditable ?? true,
+                        })}
+                      />
+                      Generate value
+                    </label>
+                    <label>
+                      Template
+                      <textarea
+                        rows="3"
+                        disabled={!selected['x-component-props']?.valueGeneratorEnabled}
+                        placeholder="INV-{YYYY}{MM}-{seq:6}"
+                        value={selected['x-component-props']?.valueGeneratorTemplate || ''}
+                        onChange={(event) => patchSelectedProps({ valueGeneratorTemplate: event.target.value })}
+                      />
+                    </label>
+                    <label className="check-row">
+                      <input
+                        className="custom-checkbox"
+                        type="checkbox"
+                        disabled={!selected['x-component-props']?.valueGeneratorEnabled}
+                        checked={selected['x-component-props']?.valueGeneratorEditable !== false}
+                        onChange={(event) => patchSelectedProps({ valueGeneratorEditable: event.target.checked })}
+                      />
+                      Allow manual edits
+                    </label>
+                  </div>
+                )}
                 <div className="builder-config-group">
                   <strong>Visibility</strong>
                   <label>
