@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using notcobase.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -27,12 +28,17 @@ builder.Services.AddScoped<notcobase.Services.SchemaMetadataSyncService>();
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    var allowedOrigins = builder.Configuration["AllowedOrigins"]
+        ?.Split(';', StringSplitOptions.RemoveEmptyEntries)
+        ?? new[] { "http://localhost:5173" };
+
+    options.AddPolicy("DefaultCorsPolicy", policy =>
     {
         policy
-            .AllowAnyOrigin()
+            .WithOrigins(allowedOrigins)
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
@@ -79,7 +85,12 @@ var app = builder.Build();
 
 // MIDDLEWARE
 // CORS
-app.UseCors("AllowAll");
+app.UseCors("DefaultCorsPolicy");
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 // Development
 if (app.Environment.IsDevelopment())

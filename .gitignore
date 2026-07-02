@@ -412,3 +412,5 @@ migrations/
 *.db-wal
 
 *.md
+
+.env
