@@ -47,6 +47,7 @@ export function movePageToSection(page, sectionName) {
     name: page.name,
     sectionName,
     requiredPermission: page.requiredPermission,
+    showInNavbar: page.showInNavbar,
     schemaJson: page.schemaJson,
     isPublished: page.isPublished,
   })
@@ -56,11 +57,13 @@ function normalizePage(page, fallbackSectionName) {
   if (!page) return page
   const sectionName = normalizeSectionName(page.sectionName ?? page.SectionName ?? fallbackSectionName)
   const requiredPermission = normalizePermissionName(page.requiredPermission ?? page.RequiredPermission)
+  const showInNavbar = page.showInNavbar ?? page.ShowInNavbar ?? true
 
   return {
     ...page,
     sectionName,
     requiredPermission,
+    showInNavbar,
   }
 }
 

@@ -52,7 +52,9 @@ public class DatabaseSeeder
             "records.view",
             "records.create",
             "records.edit",
-            "records.delete"
+            "records.delete",
+            "pages.view",
+            "pages.editor",
         };
 
         foreach (var permissionName in permissions)

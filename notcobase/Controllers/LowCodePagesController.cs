@@ -35,6 +35,7 @@ public class LowCodePagesController : ControllerBase
                 Slug = p.Slug,
                 SectionName = p.SectionName,
                 RequiredPermission = p.RequiredPermission,
+                ShowInNavbar = p.ShowInNavbar,
                 SchemaJson = p.SchemaJson,
                 IsPublished = p.IsPublished,
                 CreatedAt = p.CreatedAt,
@@ -77,6 +78,7 @@ public class LowCodePagesController : ControllerBase
             Slug = await BuildUniqueSlug(request.Name),
             SectionName = NormalizeSectionName(request.SectionName),
             RequiredPermission = NormalizePermissionName(request.RequiredPermission),
+            ShowInNavbar = request.ShowInNavbar,
             SchemaJson = request.SchemaJson,
             IsPublished = request.IsPublished,
         };
@@ -106,6 +108,7 @@ public class LowCodePagesController : ControllerBase
         page.Name = request.Name.Trim();
         page.SectionName = NormalizeSectionName(request.SectionName);
         page.RequiredPermission = NormalizePermissionName(request.RequiredPermission);
+        page.ShowInNavbar = request.ShowInNavbar;
         page.SchemaJson = request.SchemaJson;
         page.IsPublished = request.IsPublished;
         page.UpdatedAt = DateTime.UtcNow;
@@ -193,6 +196,7 @@ public class LowCodePagesController : ControllerBase
             Slug = page.Slug,
             SectionName = page.SectionName,
             RequiredPermission = page.RequiredPermission,
+            ShowInNavbar = page.ShowInNavbar,
             SchemaJson = page.SchemaJson,
             IsPublished = page.IsPublished,
             CreatedAt = page.CreatedAt,
@@ -206,6 +210,7 @@ public class LowCodePageRequest
     public required string Name { get; set; }
     public string? SectionName { get; set; }
     public string? RequiredPermission { get; set; }
+    public bool ShowInNavbar { get; set; } = true;
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
 }
@@ -217,6 +222,7 @@ public class LowCodePageDto
     public string? Slug { get; set; }
     public string? SectionName { get; set; }
     public string? RequiredPermission { get; set; }
+    public bool ShowInNavbar { get; set; }
     public required string SchemaJson { get; set; }
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }

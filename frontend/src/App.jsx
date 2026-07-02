@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import LoginPage from './features/auth/LoginPage'
 import PageBuilder from './features/pages/PageBuilder'
 import { createDefaultPageSchema, createPage, fetchPages, movePageToSection } from './features/pages/pagesApi'
@@ -6,7 +6,7 @@ import TablesApp from './features/tables/TablesApp'
 import UsersApp from './features/users/UsersApp'
 import { createPermissionChecker } from './features/auth/permissions'
 import './App.css'
-import { Dropdown } from 'antd'
+import { Breadcrumb, Dropdown } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 
 function normalizeSectionName(sectionName) {
@@ -17,6 +17,24 @@ function normalizeSectionName(sectionName) {
 function normalizeSectionList(sectionNames) {
   if (!Array.isArray(sectionNames)) return []
   return Array.from(new Set(sectionNames.map(normalizeSectionName).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+}
+
+function autoScrollForPointer(event) {
+  if (typeof window === 'undefined' || !event?.clientY) return
+  const edgeSize = 96
+  const maxSpeed = 28
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  let delta = 0
+
+  if (event.clientY < edgeSize) {
+    delta = -Math.ceil(((edgeSize - event.clientY) / edgeSize) * maxSpeed)
+  } else if (event.clientY > viewportHeight - edgeSize) {
+    delta = Math.ceil(((event.clientY - (viewportHeight - edgeSize)) / edgeSize) * maxSpeed)
+  }
+
+  if (delta !== 0) {
+    window.scrollBy({ top: delta, behavior: 'auto' })
+  }
 }
 
 export default function App() {
@@ -42,6 +60,7 @@ export default function App() {
   const [, setPageMenuOpen] = useState(false)
   const [openSectionName, setOpenSectionName] = useState('')
   const [error, setError] = useState('')
+  const routeHistoryRef = useRef([])
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('notcobase:user')
     return stored ? JSON.parse(stored) : null
@@ -114,6 +133,7 @@ export default function App() {
         name: name.trim(),
         sectionName: sectionName || null,
         requiredPermission: null,
+        showInNavbar: true,
         schemaJson: JSON.stringify(createDefaultPageSchema(name.trim())),
         isPublished: true,
       })
@@ -210,6 +230,7 @@ export default function App() {
 
   function handleNavDragOver(target, event) {
     if (!activeEditorMode) return
+    autoScrollForPointer(event)
     const dragged = getNavDragPayload(event)
     if (!dragged || dragged.orderKey === target.orderKey) return
 
@@ -323,8 +344,25 @@ export default function App() {
   }
 
   function navigateRoute(nextRoute) {
+    if (nextRoute !== route) {
+      routeHistoryRef.current.push({ route, search: locationSearch })
+    }
     clearLocationSearch()
     setRoute(nextRoute)
+  }
+
+  function navigateBack() {
+    const previous = routeHistoryRef.current.pop()
+    if (!previous) {
+      return false
+    }
+
+    const searchText = previous.search || ''
+    window.history.pushState(null, '', `${window.location.pathname}${searchText}`)
+    setLocationSearch(searchText)
+    setRoute(previous.route)
+    setError('')
+    return true
   }
 
   function handleNavigate({ targetPageId, params = {} } = {}) {
@@ -348,6 +386,7 @@ export default function App() {
     })
     const nextSearch = nextParams.toString()
     const searchText = nextSearch ? `?${nextSearch}` : ''
+    routeHistoryRef.current.push({ route, search: locationSearch })
     window.history.pushState(null, '', `${window.location.pathname}${searchText}`)
     setLocationSearch(searchText)
     setRoute(`page:${Number(targetPageId)}`)
@@ -361,14 +400,15 @@ export default function App() {
 
   const routedPageId = route.startsWith('page:') ? Number(route.slice(5)) : null
   const canAccessPage = (page) => !page?.requiredPermission || can(page.requiredPermission)
-  const visiblePages = activeEditorMode ? pages : pages.filter(canAccessPage)
+  const accessiblePages = activeEditorMode ? pages : pages.filter(canAccessPage)
+  const navPages = activeEditorMode ? accessiblePages : accessiblePages.filter((page) => page.showInNavbar !== false)
   const routedPage = pages.find((page) => page.id === routedPageId)
   const routedPageDenied = !activeEditorMode && routedPage && !canAccessPage(routedPage)
-  const activePage = visiblePages.find((page) => page.id === routedPageId) || (!activeEditorMode ? visiblePages[0] : null)
+  const activePage = accessiblePages.find((page) => page.id === routedPageId) || (!activeEditorMode ? navPages[0] || null : null)
   const activePageId = activePage?.id ?? routedPageId
-  const sectionNames = normalizeSectionList([...customSections, ...visiblePages.map((page) => page.sectionName)])
+  const sectionNames = normalizeSectionList([...customSections, ...navPages.map((page) => page.sectionName)])
   const knownOrderKeys = [
-    ...visiblePages.map((page) => `page:${page.id}`),
+    ...navPages.map((page) => `page:${page.id}`),
     ...sectionNames.map((sectionName) => `section:${sectionName}`),
   ]
   const normalizedNavOrder = [
@@ -376,12 +416,12 @@ export default function App() {
     ...knownOrderKeys.filter((item) => !navOrder.includes(item)),
   ]
   const sortByNavOrder = (left, right) => normalizedNavOrder.indexOf(left) - normalizedNavOrder.indexOf(right)
-  const unsectionedPages = visiblePages
+  const unsectionedPages = navPages
     .filter((page) => !page.sectionName)
     .sort((left, right) => sortByNavOrder(`page:${left.id}`, `page:${right.id}`))
   const pagesBySection = sectionNames.map((sectionName) => ({
     sectionName,
-    pages: visiblePages
+    pages: navPages
       .filter((page) => page.sectionName === sectionName)
       .sort((left, right) => sortByNavOrder(`page:${left.id}`, `page:${right.id}`)),
   }))
@@ -413,6 +453,20 @@ export default function App() {
       onClick: () => handleCreateSection(),
     },
   ]
+  const breadcrumbItems = [
+    {
+      title: (
+        <button type="button" className="breadcrumb-link" onClick={() => navigateRoute(activeEditorMode ? 'tables' : navPages[0] ? `page:${navPages[0].id}` : route)}>
+          Notcobase
+        </button>
+      ),
+    },
+    route === 'tables' && { title: 'Tables' },
+    route === 'users' && { title: 'Users' },
+    activePage?.sectionName && { title: activePage.sectionName },
+    activePage && { title: activePage.name },
+    !activePage && activePageId && { title: 'Page not found' },
+  ].filter(Boolean)
 
   return (
     <div className="app-frame">
@@ -420,7 +474,7 @@ export default function App() {
         <button
           type="button"
           className="brand-button"
-          onClick={() => navigateRoute(activeEditorMode ? 'tables' : visiblePages[0] ? `page:${visiblePages[0].id}` : route)}
+          onClick={() => navigateRoute(activeEditorMode ? 'tables' : navPages[0] ? `page:${navPages[0].id}` : route)}
         >
           Notcobase
         </button>
@@ -525,6 +579,10 @@ export default function App() {
         </div>
       </header>
 
+      <div className="app-breadcrumb">
+        <Breadcrumb items={breadcrumbItems} />
+      </div>
+
       {error && <div className="error-banner app-error">{error}</div>}
 
       {route === 'tables' ? (
@@ -549,7 +607,7 @@ export default function App() {
             </section>
           </main>
         )
-      ) : !activeEditorMode && visiblePages.length === 0 ? (
+      ) : !activeEditorMode && accessiblePages.length === 0 ? (
         <main className="page-content">
           <section className="empty-state">
             <h2>No pages yet</h2>
@@ -564,7 +622,7 @@ export default function App() {
           </section>
         </main>
       ) : activePage ? (
-        <PageBuilder pageId={activePage.id} pages={pages} editorMode={activeEditorMode} can={can} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} navigationSearch={locationSearch} />
+        <PageBuilder pageId={activePage.id} pages={pages} editorMode={activeEditorMode} can={can} onPagesChanged={handlePagesChanged} onNavigate={handleNavigate} onNavigateBack={navigateBack} navigationSearch={locationSearch} />
       ) : activePageId ? (
         <main className="page-content">
           <section className="empty-state">

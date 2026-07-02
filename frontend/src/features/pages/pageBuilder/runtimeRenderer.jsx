@@ -46,6 +46,25 @@ function getDropPosition(event, node) {
   return relativeY < 0.5 ? 'before' : 'after'
 }
 
+function autoScrollForPointer(event) {
+  if (typeof window === 'undefined' || !event?.clientY) return
+  const edgeSize = 96
+  const maxSpeed = 28
+  const { clientY } = event
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  let delta = 0
+
+  if (clientY < edgeSize) {
+    delta = -Math.ceil(((edgeSize - clientY) / edgeSize) * maxSpeed)
+  } else if (clientY > viewportHeight - edgeSize) {
+    delta = Math.ceil(((clientY - (viewportHeight - edgeSize)) / edgeSize) * maxSpeed)
+  }
+
+  if (delta !== 0) {
+    window.scrollBy({ top: delta, behavior: 'auto' })
+  }
+}
+
 function collectSchemaFieldNames(node, names = new Set()) {
   if (!node || typeof node !== 'object') return names
   const fieldName = node['x-field'] || node.name
@@ -73,7 +92,88 @@ function closeModalEvent(event, close) {
   close?.()
 }
 
-function ReferenceTableField({ value, onChange, config, fieldName, disabled, runtimeData, parentRecordId }) {
+function getEditorDeleteButton(node, editorMode, runtimeData) {
+  if (!editorMode || node.id === runtimeData?.rootNodeId || !runtimeData?.onDeleteNode) return null
+
+  return (
+    <button
+      type="button"
+      className="page-node-delete"
+      draggable={false}
+      aria-label={`Delete ${node.title || node.name || 'component'}`}
+      onMouseDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onDragStart={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        runtimeData.onDeleteNode(node.id)
+      }}
+    >
+      x
+    </button>
+  )
+}
+
+function renderFieldNode({ node, editorMode, selectProps, deleteButton, className = '', children }) {
+  if (!editorMode) {
+    return (
+      <label key={node.id} {...selectProps} className={className || undefined}>
+        {children}
+      </label>
+    )
+  }
+
+  return (
+    <div key={node.id} {...selectProps} className={`${selectProps.className || ''}${className ? ` ${className}` : ''}`}>
+      {deleteButton}
+      <label>
+        {children}
+      </label>
+    </div>
+  )
+}
+
+function getFormDraftKey(node, tableId, mode, recordId) {
+  if (typeof window === 'undefined') return ''
+  const scope = new URLSearchParams(window.location.search).get('_ncDraftScope') || 'default'
+  return `notcobase:form-draft:${scope}:${node?.id || 'form'}:${tableId || 'none'}:${mode || 'create'}:${recordId || 'new'}`
+}
+
+function createDraftScope(prefix = 'scope') {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function loadFormDraft(key, fallback) {
+  if (!key || typeof window === 'undefined') return fallback
+  try {
+    const stored = window.sessionStorage.getItem(key)
+    if (!stored) return fallback
+    const parsed = JSON.parse(stored)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? { ...fallback, ...parsed }
+      : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveFormDraft(key, values) {
+  if (!key || typeof window === 'undefined') return
+  window.sessionStorage.setItem(key, JSON.stringify(values || {}))
+}
+
+function clearFormDraft(key) {
+  if (!key || typeof window === 'undefined') return
+  window.sessionStorage.removeItem(key)
+}
+
+function ReferenceTableField({ value, onChange, config, fieldName, disabled, runtimeData, parentRecordId, parentValues }) {
   const targetTableId = Number(config.targetTableId)
   const mode = getReferenceMode(config)
   const related = mode === 'related'
@@ -107,6 +207,27 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
   }
 
   function openCreate() {
+    if (config.referenceCreateAction === 'navigate') {
+      const draftScope = createDraftScope('reference-create')
+      navigateToPage(runtimeData, config.referenceCreateTargetPageId, {
+        tableId: targetTableId,
+        mode: 'create',
+        sourceField: fieldName,
+        parentTableId: config.parentTableId,
+        parentFieldName,
+        ...(parentRecordId ? { parentRecordId } : {}),
+        ...(config.referenceCreateNavigationParams || {}),
+        _ncDraftScope: draftScope,
+      }, {
+        ...(parentValues || {}),
+        tableId: targetTableId,
+        mode: 'create',
+        sourceField: fieldName,
+        parentFieldName,
+        ...(parentRecordId ? { parentRecordId } : {}),
+      })
+      return
+    }
     setEditingRecord(null)
     setDraft({})
     setModalOpen(true)
@@ -266,6 +387,7 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
 
 function TableBlockRenderer({ node, editorMode, selectProps, runtimeData }) {
   const props = node['x-component-props'] || {}
+  const deleteButton = getEditorDeleteButton(node, editorMode, runtimeData)
   const tableId = Number(props.tableId)
   const tableColumns = getTableColumns(runtimeData.tableDetailsById, tableId)
   const selectedColumns = Array.isArray(props.columns)
@@ -388,6 +510,7 @@ function TableBlockRenderer({ node, editorMode, selectProps, runtimeData }) {
 
   return (
     <div key={node.id} {...selectProps} className={`${selectProps.className || ''} rendered-block`}>
+      {deleteButton}
       <div className="rendered-block-header">
         <h2>{node.title || 'Records'}</h2>
         {props.allowCreate !== false && <button type="button" onClick={openCreate}>New</button>}
@@ -516,6 +639,7 @@ function FieldInput({ node, column, formContext, runtimeData }) {
           disabled={disabled}
           runtimeData={runtimeData}
           parentRecordId={formContext?.recordId}
+          parentValues={formContext?.values}
         />
       )
     }
@@ -527,16 +651,43 @@ function FieldInput({ node, column, formContext, runtimeData }) {
     }))
 
     return (
-      <AntSelect
-        mode="multiple"
-        allowClear
-        value={parseIds(value)}
-        placeholder={props.placeholder || 'Select records'}
-        options={options}
-        disabled={disabled || !targetTableId}
-        style={{ width: '100%' }}
-        onChange={(nextValue) => setValue(nextValue)}
-      />
+      <div className="reference-select-field">
+        <AntSelect
+          mode="multiple"
+          allowClear
+          value={parseIds(value)}
+          placeholder={props.placeholder || 'Select records'}
+          options={options}
+          disabled={disabled || !targetTableId}
+          style={{ width: '100%' }}
+          onChange={(nextValue) => setValue(nextValue)}
+        />
+        <button
+          type="button"
+          className="secondary"
+          disabled={disabled || !targetTableId || props.referenceCreateAction !== 'navigate'}
+          onClick={() => {
+            if (props.referenceCreateAction === 'navigate') {
+              const draftScope = createDraftScope('reference-create')
+              navigateToPage(runtimeData, props.referenceCreateTargetPageId, {
+                tableId: targetTableId,
+                mode: 'create',
+                sourceField: fieldName,
+                parentTableId: formContext?.tableId,
+                ...(props.referenceCreateNavigationParams || {}),
+                _ncDraftScope: draftScope,
+              }, {
+                ...(formContext?.values || {}),
+                tableId: targetTableId,
+                mode: 'create',
+                sourceField: fieldName,
+              })
+            }
+          }}
+        >
+          Add record
+        </button>
+      </div>
     )
   }
 
@@ -570,6 +721,7 @@ function FieldInput({ node, column, formContext, runtimeData }) {
 
 function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectProps, runtimeData }) {
   const props = node['x-component-props'] || {}
+  const deleteButton = getEditorDeleteButton(node, editorMode, runtimeData)
   const tableId = Number(props.tableId)
   const groupKey = getFormGroupKey(props, tableId)
   const formGroup = !editorMode && groupKey ? runtimeData.getFormGroup?.(groupKey) : null
@@ -601,7 +753,9 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
     ...createInitialFormData(formColumns, editingRecord),
     ...collectInitialFormValuesFromSchema(node, formColumns, editingRecord),
   }), [formColumns, editingRecord, node])
-  const [values, setValues] = useState(() => initialValues)
+  const draftKey = getFormDraftKey(node, tableId, mode, recordId)
+  const loadedInitialValues = useMemo(() => loadFormDraft(draftKey, initialValues), [draftKey, initialValues])
+  const [values, setValues] = useState(() => loadedInitialValues)
   const [saving, setSaving] = useState(false)
 
   function updateValues(updater) {
@@ -632,8 +786,8 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
       allowCreate: props.allowCreate,
       columns: formColumns,
     })
-    formGroup.mergeValues(node, initialValues)
-  }, [formGroup, tableId, recordId, mode, props.allowCreate, formColumns, node, initialValues])
+    formGroup.mergeValues(node, loadedInitialValues)
+  }, [formGroup, tableId, recordId, mode, props.allowCreate, formColumns, node, loadedInitialValues])
 
   const formContext = {
     values,
@@ -665,6 +819,10 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
       })
     })
   }, [mode, node, records])
+
+  useEffect(() => {
+    saveFormDraft(draftKey, values)
+  }, [draftKey, values])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -734,6 +892,8 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
 
       await runtimeData.reloadTableDetails?.(tableId)
       formGroup?.clearValues()
+      clearFormDraft(draftKey)
+      setValues(initialValues)
       message.success('Saved')
 
       const savedRecordId = mode === 'edit' ? recordId : createdId
@@ -749,6 +909,8 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
           tableId,
           mode,
         })
+      } else if (props.saveAction === 'back') {
+        runtimeData.onNavigateBack?.()
       }
     } catch (err) {
       const errorMessage =
@@ -774,6 +936,7 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
 
   return (
     <form key={node.id} {...selectProps} className={`${selectProps.className || ''} rendered-block form-block`} onSubmit={handleSubmit}>
+      {deleteButton}
       <h2>{node.title || 'Form'}</h2>
       {!props.tableId && <p className="muted">Select a table in block settings.</p>}
       <div className="form-block-custom-layout">{content}</div>
@@ -793,11 +956,22 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
   const dragState = runtimeData?.dragState
   const dropActive = dragState?.dropTarget?.nodeId === node.id ? ` drop-${dragState.dropTarget.position}` : ''
   const isDragging = dragState?.draggedNodeId === node.id ? ' dragging' : ''
-  const className = editorMode && selectedNodeId === node.id ? `page-node selected${dropActive}${isDragging}` : editorMode ? `page-node${dropActive}${isDragging}` : ''
+  const isHovered = runtimeData?.hoveredNodeId === node.id
+  const className = editorMode
+    ? `page-node${selectedNodeId === node.id ? ' selected' : ''}${isHovered ? ' hovered' : ''}${dropActive}${isDragging}`
+    : ''
   const selectProps = editorMode
     ? {
         className,
         draggable: node.id !== runtimeData?.rootNodeId,
+        onMouseEnter: (event) => {
+          event.stopPropagation()
+          runtimeData?.setHoveredNodeId?.(node.id)
+        },
+        onMouseLeave: (event) => {
+          event.stopPropagation()
+          runtimeData?.setHoveredNodeId?.((current) => (current === node.id ? null : current))
+        },
         onClick: (event) => {
           event.stopPropagation()
           onSelect(node.id)
@@ -813,6 +987,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
           runtimeData?.setDragState?.({ draggedNodeId: node.id, dropTarget: null })
         },
         onDragOver: (event) => {
+          autoScrollForPointer(event)
           const draggedNodeId = dragState?.draggedNodeId || event.dataTransfer.getData('text/plain')
           if (!draggedNodeId || draggedNodeId === node.id) return
           event.preventDefault()
@@ -844,10 +1019,11 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
         },
       }
     : {}
+  const deleteButton = getEditorDeleteButton(node, editorMode, runtimeData)
 
   if (!shouldRenderNode(node, editorMode, formContext)) return null
 
-  if (component === 'Container') return <div key={node.id} {...selectProps} className={`${selectProps.className || ''} page-container`}>{children}</div>
+  if (component === 'Container') return <div key={node.id} {...selectProps} className={`${selectProps.className || ''} page-container`}>{deleteButton}{children}</div>
   if (component === 'Grid.Row') {
     return (
       <AntRow
@@ -859,6 +1035,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
         justify={props.justify || 'start'}
         wrap={props.wrap !== false}
       >
+        {deleteButton}
         {children}
       </AntRow>
     )
@@ -866,6 +1043,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
   if (component === 'Grid.Col') {
     return (
       <AntCol key={node.id} {...selectProps} className={`${selectProps.className || ''} page-grid-col`} {...getColProps(props)}>
+        {deleteButton}
         {children}
       </AntCol>
     )
@@ -873,6 +1051,7 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
   if (component === 'Section') {
     return (
       <div key={node.id} {...selectProps} className={`${selectProps.className || ''} page-section-collapse`}>
+        {deleteButton}
         <Collapse
           defaultActiveKey={[node.id]}
           items={[
@@ -894,18 +1073,27 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
     }))
     return (
       <div key={node.id} {...selectProps} className={`${selectProps.className || ''} page-tabs`}>
+        {deleteButton}
         <AntTabs tabPlacement={props.tabPlacement || 'top'} items={tabItems} />
       </div>
     )
   }
-  if (component === 'Divider') return <div key={node.id} {...selectProps}><AntDivider titlePlacement={props.titlePlacement || 'left'}>{props.text || node.title}</AntDivider></div>
-  if (component === 'Heading') return <h2 key={node.id} {...selectProps}>{props.text || node.title}</h2>
-  if (component === 'Text') return <p key={node.id} {...selectProps}>{props.text || node.title}</p>
+  if (component === 'Divider') return <div key={node.id} {...selectProps}>{deleteButton}<AntDivider titlePlacement={props.titlePlacement || 'left'}>{props.text || node.title}</AntDivider></div>
+  if (component === 'Heading') return <h2 key={node.id} {...selectProps}>{deleteButton}{props.text || node.title}</h2>
+  if (component === 'Text') return <p key={node.id} {...selectProps}>{deleteButton}{props.text || node.title}</p>
   if (component === 'Button') {
     function handleButtonClick(event) {
       selectProps.onClick?.(event)
       if (editorMode || props.action !== 'navigate') return
       navigateToPage(runtimeData, props.targetPageId, props.navigationParams, formContext?.values || {})
+    }
+    if (editorMode) {
+      return (
+        <div key={node.id} {...selectProps} className={`${selectProps.className || ''} page-button-node`}>
+          {deleteButton}
+          <button type="button">{props.text || node.title}</button>
+        </div>
+      )
     }
     return <button key={node.id} type="button" {...selectProps} onClick={handleButtonClick}>{props.text || node.title}</button>
   }
@@ -920,41 +1108,70 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
           {...selectProps}
           className={`${selectProps.className || ''} check-row`}
         >
+          {deleteButton}
           <FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} />
           {node.title && <span className="field-label"><RequiredLabel required={required}>{node.title}</RequiredLabel></span>}
         </div>
       )
     }
-    return <label key={node.id} {...selectProps}><RequiredLabel required={required}>{node.title}</RequiredLabel><FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
+    return renderFieldNode({
+      node,
+      editorMode,
+      selectProps,
+      deleteButton,
+      children: (
+        <>
+          <RequiredLabel required={required}>{node.title}</RequiredLabel>
+          <FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} />
+        </>
+      ),
+    })
   }
-  if (component === 'Input') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input placeholder={props.placeholder} /></label>
-  if (component === 'InputNumber') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="number" placeholder={props.placeholder} /></label>
-  if (component === 'Textarea' || component === 'Input.TextArea') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><textarea rows="4" placeholder={props.placeholder} /></label>
+  if (component === 'Input') return renderFieldNode({ node, editorMode, selectProps, deleteButton, children: <><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input placeholder={props.placeholder} /></> })
+  if (component === 'InputNumber') return renderFieldNode({ node, editorMode, selectProps, deleteButton, children: <><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="number" placeholder={props.placeholder} /></> })
+  if (component === 'Textarea' || component === 'Input.TextArea') return renderFieldNode({ node, editorMode, selectProps, deleteButton, children: <><RequiredLabel required={node.required}>{node.title}</RequiredLabel><textarea rows="4" placeholder={props.placeholder} /></> })
   if (component === 'Select') {
     const options = props.optionMode === 'dynamic'
       ? getDynamicSelectOptions(props, runtimeData)
       : (node.enum || props.options || []).map((option) => ({ value: getOptionValue(option), label: getOptionLabel(option) }))
-    return (
-      <label key={node.id} {...selectProps}>
-        <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
-        <AntSelect
-          placeholder={props.placeholder || 'Select'}
-          options={options}
-          allowClear
-          style={{ width: '100%' }}
-        />
-      </label>
-    )
+    return renderFieldNode({
+      node,
+      editorMode,
+      selectProps,
+      deleteButton,
+      children: (
+        <>
+          <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
+          <AntSelect
+            placeholder={props.placeholder || 'Select'}
+            options={options}
+            allowClear
+            style={{ width: '100%' }}
+          />
+        </>
+      ),
+    })
   }
-  if (component === 'Checkbox') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></label>
-  if (component === 'Switch') return <label key={node.id} {...selectProps} className={`${selectProps.className || ''} check-row`}><input className="custom-checkbox" type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></label>
-  if (component === 'DatePicker') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="date" /></label>
-  if (component === 'File') return <label key={node.id} {...selectProps}><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="file" /></label>
+  if (component === 'Checkbox') return renderFieldNode({ node, editorMode, selectProps, deleteButton, className: 'check-row', children: <><input type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></> })
+  if (component === 'Switch') return renderFieldNode({ node, editorMode, selectProps, deleteButton, className: 'check-row', children: <><input className="custom-checkbox" type="checkbox" /><RequiredLabel required={node.required}>{node.title}</RequiredLabel></> })
+  if (component === 'DatePicker') return renderFieldNode({ node, editorMode, selectProps, deleteButton, children: <><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="date" /></> })
+  if (component === 'File') return renderFieldNode({ node, editorMode, selectProps, deleteButton, children: <><RequiredLabel required={node.required}>{node.title}</RequiredLabel><input type="file" /></> })
   if (component === 'Reference') {
     if (formContext) {
       const fieldName = node['x-field'] || node.name
       const column = getColumnByFieldName(formContext.columns || getTableColumns(runtimeData.tableDetailsById, formContext.tableId), fieldName)
-      return <label key={node.id} {...selectProps}><RequiredLabel required={node.required || column?.isRequired}>{node.title}</RequiredLabel><FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} /></label>
+      return renderFieldNode({
+        node,
+        editorMode,
+        selectProps,
+        deleteButton,
+        children: (
+          <>
+            <RequiredLabel required={node.required || column?.isRequired}>{node.title}</RequiredLabel>
+            <FieldInput node={node} column={column} formContext={formContext} runtimeData={runtimeData} />
+          </>
+        ),
+      })
     }
     const targetTable = runtimeData.tables?.find((table) => table.id === Number(props.targetTableId))
     const targetDetails = runtimeData.tableDetailsById[props.targetTableId]
@@ -963,19 +1180,25 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
       value: record.id,
       label: getDisplayValue(record, displayColumn),
     }))
-    return (
-      <label key={node.id} {...selectProps}>
-        <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
-        <AntSelect
-          mode="multiple"
-          allowClear
-          placeholder={targetTable ? props.placeholder || `Select ${targetTable.name}` : 'Select target table first'}
-          options={referenceOptions}
-          disabled={!targetTable}
-          style={{ width: '100%' }}
-        />
-      </label>
-    )
+    return renderFieldNode({
+      node,
+      editorMode,
+      selectProps,
+      deleteButton,
+      children: (
+        <>
+          <RequiredLabel required={node.required}>{node.title}</RequiredLabel>
+          <AntSelect
+            mode="multiple"
+            allowClear
+            placeholder={targetTable ? props.placeholder || `Select ${targetTable.name}` : 'Select target table first'}
+            options={referenceOptions}
+            disabled={!targetTable}
+            style={{ width: '100%' }}
+          />
+        </>
+      ),
+    })
   }
   if (component === 'FormBlock') {
     const formKey = [
@@ -984,11 +1207,12 @@ export function renderNode(node, editorMode, selectedNodeId, onSelect, runtimeDa
       props.recordId || getRecordIdFromLocation(props.recordIdParam) || '',
       Array.isArray(props.formColumns) ? props.formColumns.join('|') : '',
       runtimeData.tableDetailsById[props.tableId]?.columns?.length || 0,
+      runtimeData.navigationSearch || '',
     ].join(':')
     return <FormBlockRenderer key={formKey} node={node} editorMode={editorMode} selectedNodeId={selectedNodeId} onSelect={onSelect} selectProps={selectProps} runtimeData={runtimeData} />
   }
   if (component === 'TableBlock') {
     return <TableBlockRenderer key={node.id} node={node} editorMode={editorMode} selectProps={selectProps} runtimeData={runtimeData} />
   }
-  return <div key={node.id} {...selectProps}>{children}</div>
+  return <div key={node.id} {...selectProps}>{deleteButton}{children}</div>
 }

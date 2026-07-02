@@ -12,11 +12,11 @@ import {
   parseProps,
 } from './pageBuilder/dataUtils'
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
-import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, updateNode } from './pageBuilder/schemaUtils'
+import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, removeNodeAndPromoteChildren, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
 // import TreeNode from './pageBuilder/TreeNode'
 
-export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate }) {
+export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate, onNavigateBack, navigationSearch = '' }) {
   const [page, setPage] = useState(null)
   const [schema, setSchema] = useState(defaultSchema)
   const [selectedNodeId, setSelectedNodeId] = useState(null)
@@ -27,6 +27,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
   const [permissions, setPermissions] = useState([])
   const [tableDetailsById, setTableDetailsById] = useState({})
   const [dragState, setDragState] = useState(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState(null)
 
   useEffect(() => {
     let ignore = false
@@ -149,6 +150,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
         name: page.name,
         sectionName: page.sectionName,
         requiredPermission: page.requiredPermission,
+        showInNavbar: page.showInNavbar !== false,
         schemaJson: JSON.stringify(schema),
         isPublished: true,
       })
@@ -180,6 +182,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
     setSchema((currentSchema) => moveNodeToPosition(currentSchema, dragState.draggedNodeId, dropTarget.nodeId, dropTarget.position))
     setSelectedNodeId(dragState.draggedNodeId)
     setDragState(null)
+  }
+
+  function handleDeleteNode(nodeId) {
+    if (!nodeId || nodeId === schema.id) return
+    setSchema((currentSchema) => removeNodeAndPromoteChildren(currentSchema, nodeId))
+    setSelectedNodeId(schema.id)
+    setDragState(null)
+    setHoveredNodeId(null)
   }
 
   function patchSelected(patch) {
@@ -319,7 +329,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
     }))
   }
 
-  if (!page) {
+  if (!page || page.id !== pageId) {
     return <main className="page-builder-shell"><p className="muted">{error || 'Loading page...'}</p></main>
   }
 
@@ -347,6 +357,15 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="check-row">
+              <input
+                className="custom-checkbox"
+                type="checkbox"
+                checked={page.showInNavbar !== false}
+                onChange={(event) => setPage({ ...page, showInNavbar: event.target.checked })}
+              />
+              Show in navbar
             </label>
             <div className="button-row">
               <button type="button" disabled={saving} onClick={savePage}>{saving ? 'Saving...' : 'Save'}</button>
@@ -573,6 +592,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                       <select value={selected['x-component-props']?.saveAction || 'none'} onChange={(event) => patchSelectedProps({ saveAction: event.target.value })}>
                         <option value="none">Stay on page</option>
                         <option value="navigate">Navigate to page</option>
+                        <option value="back">Navigate back</option>
                       </select>
                     </label>
                     <label>
@@ -865,6 +885,24 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                         <option value="select">Select picker</option>
                       </select>
                     </label>
+                    <label>
+                      Add record action
+                      <select value={selected['x-component-props']?.referenceCreateAction || 'modal'} onChange={(event) => patchSelectedProps({ referenceCreateAction: event.target.value })}>
+                        <option value="modal">Open modal</option>
+                        <option value="navigate">Navigate to page</option>
+                      </select>
+                    </label>
+                    <label>
+                      Add record target page
+                      <select disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={selected['x-component-props']?.referenceCreateTargetPageId || ''} onChange={(event) => patchSelectedProps({ referenceCreateTargetPageId: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">Select page</option>
+                        {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Add record query params JSON
+                      <textarea rows="3" disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.referenceCreateNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('referenceCreateNavigationParams', event.target.value)} />
+                    </label>
                   </>
                 )}
                 <label className="check-row">
@@ -984,9 +1022,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
           reloadTableDetails,
           getFormGroup,
           onNavigate,
+          onNavigateBack,
+          navigationSearch,
           dragState,
           setDragState,
+          hoveredNodeId,
+          setHoveredNodeId,
           onNodeDrop: handleNodeDrop,
+          onDeleteNode: handleDeleteNode,
           rootNodeId: schema.id,
         })}
       </section>

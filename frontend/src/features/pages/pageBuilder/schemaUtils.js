@@ -235,6 +235,51 @@ function withOrderedProperties(node, entries) {
   }
 }
 
+function getUniquePropertyKey(baseKey, usedKeys) {
+  if (!usedKeys.has(baseKey)) return baseKey
+  let index = 2
+  let nextKey = `${baseKey}_${index}`
+  while (usedKeys.has(nextKey)) {
+    index += 1
+    nextKey = `${baseKey}_${index}`
+  }
+  return nextKey
+}
+
+export function removeNodeAndPromoteChildren(schema, nodeId) {
+  if (!schema || schema.id === nodeId || !schema.properties) return schema
+
+  const entries = Object.entries(schema.properties)
+  const targetIndex = entries.findIndex(([, child]) => child.id === nodeId)
+
+  if (targetIndex >= 0) {
+    const usedKeys = new Set(entries.filter(([, child]) => child.id !== nodeId).map(([key]) => key))
+    const nextEntries = []
+
+    entries.forEach(([key, child]) => {
+      if (child.id !== nodeId) {
+        nextEntries.push([key, child])
+        return
+      }
+
+      Object.entries(child.properties || {}).forEach(([childKey, promotedChild]) => {
+        const nextKey = getUniquePropertyKey(childKey || promotedChild.name, usedKeys)
+        usedKeys.add(nextKey)
+        nextEntries.push([nextKey, promotedChild])
+      })
+    })
+
+    return withOrderedProperties(schema, nextEntries)
+  }
+
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      entries.map(([key, child]) => [key, removeNodeAndPromoteChildren(child, nodeId)]),
+    ),
+  }
+}
+
 export function moveNodeToPosition(schema, draggedNodeId, targetNodeId, position) {
   if (!draggedNodeId || !targetNodeId || draggedNodeId === targetNodeId) return schema
 
