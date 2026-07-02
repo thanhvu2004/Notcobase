@@ -38,7 +38,9 @@ builder.Services.AddCors(options =>
 
 // DATABASE
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
+    options.UseSqlite(
+        builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Data Source=app.db"));
 
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
@@ -107,10 +109,9 @@ app.Map("/api/error", () => Results.Problem());
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await EnsurePageNavigationColumnsAsync(context);
-
     var seeder = scope.ServiceProvider.GetRequiredService<notcobase.Services.DatabaseSeeder>();
     await seeder.SeedAsync();
+    await EnsurePageNavigationColumnsAsync(context);
 }
 
 app.Run();

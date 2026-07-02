@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "5284:5284"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5284
+      - Jwt__Issuer=http://localhost:5284
+      - Jwt__Audience=http://localhost:5284
+      - Jwt__Key=YourSuperSecretKey12345
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/app.db
+    volumes:
+      - db_data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:5284
+
+volumes:
+  db_data:
