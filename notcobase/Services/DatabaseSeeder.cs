@@ -19,6 +19,7 @@ public class DatabaseSeeder
     public async Task SeedAsync()
     {
         await _context.Database.MigrateAsync();
+        await EnsureCoreMetadataSchemaAsync();
         await EnsureColumnSortOrderSchemaAsync();
         // Create permissions if they don't exist
         var permissions = new[]
@@ -127,6 +128,145 @@ public class DatabaseSeeder
         await _metadataSeeder.SeedAsync();
     }
 
+    private async Task EnsureCoreMetadataSchemaAsync()
+    {
+        var connection = _context.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldClose)
+            await connection.OpenAsync();
+
+        try
+        {
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS Permissions (
+                    Id INTEGER NOT NULL CONSTRAINT PK_Permissions PRIMARY KEY AUTOINCREMENT,
+                    PermissionName TEXT NOT NULL,
+                    Description TEXT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS Roles (
+                    Id INTEGER NOT NULL CONSTRAINT PK_Roles PRIMARY KEY AUTOINCREMENT,
+                    RoleName TEXT NOT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS Users (
+                    Id INTEGER NOT NULL CONSTRAINT PK_Users PRIMARY KEY AUTOINCREMENT,
+                    Username TEXT NOT NULL,
+                    PasswordHashed TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS Tables (
+                    Id INTEGER NOT NULL CONSTRAINT PK_Tables PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Description TEXT NULL,
+                    InheritProperties INTEGER NOT NULL,
+                    ParentTableId INTEGER NULL,
+                    PhysicalTableCreated INTEGER NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CONSTRAINT FK_Tables_Tables_ParentTableId FOREIGN KEY (ParentTableId) REFERENCES Tables (Id) ON DELETE RESTRICT
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS ComponentDefinitions (
+                    Id INTEGER NOT NULL CONSTRAINT PK_ComponentDefinitions PRIMARY KEY AUTOINCREMENT,
+                    ComponentName TEXT NOT NULL,
+                    Category TEXT NOT NULL,
+                    DefaultPropsJson TEXT NOT NULL,
+                    DefaultSchemaJson TEXT NOT NULL,
+                    Icon TEXT NULL,
+                    CanHaveChildren INTEGER NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS BlockTemplates (
+                    Id INTEGER NOT NULL CONSTRAINT PK_BlockTemplates PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Type TEXT NOT NULL,
+                    SchemaJson TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS LowCodePages (
+                    Id INTEGER NOT NULL CONSTRAINT PK_LowCodePages PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Slug TEXT NULL,
+                    SchemaJson TEXT NOT NULL,
+                    IsPublished INTEGER NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    SectionName TEXT NULL,
+                    RequiredPermission TEXT NULL,
+                    ShowInNavbar INTEGER NOT NULL DEFAULT 1
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS Columns (
+                    Id INTEGER NOT NULL CONSTRAINT PK_Columns PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    FieldType TEXT NOT NULL,
+                    TableId INTEGER NOT NULL,
+                    IsRequired INTEGER NOT NULL,
+                    SortOrder INTEGER NOT NULL DEFAULT 0,
+                    CreatedAt TEXT NOT NULL,
+                    ComponentDefinitionId INTEGER NULL,
+                    ComponentPropsJson TEXT NOT NULL DEFAULT '{}',
+                    CONSTRAINT FK_Columns_Tables_TableId FOREIGN KEY (TableId) REFERENCES Tables (Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_Columns_ComponentDefinitions_ComponentDefinitionId FOREIGN KEY (ComponentDefinitionId) REFERENCES ComponentDefinitions (Id)
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS RolePermissions (
+                    RoleId INTEGER NOT NULL,
+                    PermissionId INTEGER NOT NULL,
+                    CONSTRAINT PK_RolePermissions PRIMARY KEY (RoleId, PermissionId),
+                    CONSTRAINT FK_RolePermissions_Roles_RoleId FOREIGN KEY (RoleId) REFERENCES Roles (Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_RolePermissions_Permissions_PermissionId FOREIGN KEY (PermissionId) REFERENCES Permissions (Id) ON DELETE CASCADE
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS UserRoles (
+                    UserId INTEGER NOT NULL,
+                    RoleId INTEGER NOT NULL,
+                    CONSTRAINT PK_UserRoles PRIMARY KEY (UserId, RoleId),
+                    CONSTRAINT FK_UserRoles_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE,
+                    CONSTRAINT FK_UserRoles_Roles_RoleId FOREIGN KEY (RoleId) REFERENCES Roles (Id) ON DELETE CASCADE
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, "CREATE UNIQUE INDEX IF NOT EXISTS IX_ComponentDefinitions_ComponentName ON ComponentDefinitions (ComponentName);");
+            await ExecuteCommandAsync(connection, "CREATE UNIQUE INDEX IF NOT EXISTS IX_BlockTemplates_Name_Type ON BlockTemplates (Name, Type);");
+            await ExecuteCommandAsync(connection, "CREATE UNIQUE INDEX IF NOT EXISTS IX_LowCodePages_Slug ON LowCodePages (Slug);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Tables_ParentTableId ON Tables (ParentTableId);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Columns_TableId ON Columns (TableId);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Columns_ComponentDefinitionId ON Columns (ComponentDefinitionId);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Columns_TableId_SortOrder ON Columns (TableId, SortOrder);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_RolePermissions_PermissionId ON RolePermissions (PermissionId);");
+            await ExecuteCommandAsync(connection, "CREATE INDEX IF NOT EXISTS IX_UserRoles_RoleId ON UserRoles (RoleId);");
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
+    }
+
     private async Task EnsureColumnSortOrderSchemaAsync()
     {
         var connection = _context.Database.GetDbConnection();
@@ -180,5 +320,12 @@ public class DatabaseSeeder
             if (shouldClose)
                 await connection.CloseAsync();
         }
+    }
+
+    private static async Task ExecuteCommandAsync(System.Data.Common.DbConnection connection, string commandText)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        await command.ExecuteNonQueryAsync();
     }
 }
