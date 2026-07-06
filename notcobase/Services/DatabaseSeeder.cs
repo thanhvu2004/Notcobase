@@ -153,7 +153,7 @@ public class DatabaseSeeder
                         SortOrder INTEGER NOT NULL DEFAULT 0,
                         CreatedAt TEXT NOT NULL,
                         ComponentDefinitionId INTEGER NULL,
-                        ComponentPropsJson TEXT NOT NULL DEFAULT '{}',
+                        ComponentPropsJson TEXT NOT NULL DEFAULT '{{}}',
                         CONSTRAINT FK_Columns_Tables_TableId FOREIGN KEY (TableId) REFERENCES Tables (Id) ON DELETE CASCADE,
                         CONSTRAINT FK_Columns_ComponentDefinitions_ComponentDefinitionId FOREIGN KEY (ComponentDefinitionId) REFERENCES ComponentDefinitions (Id)
                     );
