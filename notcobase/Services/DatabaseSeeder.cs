@@ -137,6 +137,33 @@ public class DatabaseSeeder
 
         try
         {
+            await using var tableCommand = connection.CreateCommand();
+            tableCommand.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'Columns'";
+            var hasColumnsTable = Convert.ToInt32(await tableCommand.ExecuteScalarAsync()) > 0;
+
+            if (!hasColumnsTable)
+            {
+                await _context.Database.ExecuteSqlRawAsync("""
+                    CREATE TABLE IF NOT EXISTS Columns (
+                        Id INTEGER NOT NULL CONSTRAINT PK_Columns PRIMARY KEY AUTOINCREMENT,
+                        Name TEXT NOT NULL,
+                        FieldType TEXT NOT NULL,
+                        TableId INTEGER NOT NULL,
+                        IsRequired INTEGER NOT NULL,
+                        SortOrder INTEGER NOT NULL DEFAULT 0,
+                        CreatedAt TEXT NOT NULL,
+                        ComponentDefinitionId INTEGER NULL,
+                        ComponentPropsJson TEXT NOT NULL DEFAULT '{}',
+                        CONSTRAINT FK_Columns_Tables_TableId FOREIGN KEY (TableId) REFERENCES Tables (Id) ON DELETE CASCADE,
+                        CONSTRAINT FK_Columns_ComponentDefinitions_ComponentDefinitionId FOREIGN KEY (ComponentDefinitionId) REFERENCES ComponentDefinitions (Id)
+                    );
+                    """);
+                await _context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_Columns_TableId ON Columns (TableId)");
+                await _context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_Columns_ComponentDefinitionId ON Columns (ComponentDefinitionId)");
+                await _context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_Columns_TableId_SortOrder ON Columns (TableId, SortOrder)");
+                return;
+            }
+
             await using var checkCommand = connection.CreateCommand();
             checkCommand.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Columns') WHERE name = 'SortOrder'";
             var hasSortOrder = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
