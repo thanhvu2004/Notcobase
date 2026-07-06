@@ -39,6 +39,8 @@ public class DatabaseSeeder
             "permissions.delete",
             "permissions.assign",
             "permissions.remove",
+            "pages.view",
+            "pages.editor",
             "tables.view",
             "tables.create",
             "tables.edit",
@@ -50,7 +52,9 @@ public class DatabaseSeeder
             "records.view",
             "records.create",
             "records.edit",
-            "records.delete"
+            "records.delete",
+            "pages.view",
+            "pages.editor",
         };
 
         foreach (var permissionName in permissions)

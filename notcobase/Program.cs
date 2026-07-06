@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using notcobase.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -27,18 +28,25 @@ builder.Services.AddScoped<notcobase.Services.SchemaMetadataSyncService>();
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    var allowedOrigins = builder.Configuration["AllowedOrigins"]
+        ?.Split(';', StringSplitOptions.RemoveEmptyEntries)
+        ?? new[] { "http://localhost:5173" };
+
+    options.AddPolicy("DefaultCorsPolicy", policy =>
     {
         policy
-            .AllowAnyOrigin()
+            .WithOrigins(allowedOrigins)
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
 // DATABASE
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
+    options.UseSqlite(
+        builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Data Source=app.db"));
 
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
@@ -77,7 +85,12 @@ var app = builder.Build();
 
 // MIDDLEWARE
 // CORS
-app.UseCors("AllowAll");
+app.UseCors("DefaultCorsPolicy");
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 // Development
 if (app.Environment.IsDevelopment())
@@ -107,10 +120,9 @@ app.Map("/api/error", () => Results.Problem());
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await EnsurePageNavigationColumnsAsync(context);
-
     var seeder = scope.ServiceProvider.GetRequiredService<notcobase.Services.DatabaseSeeder>();
     await seeder.SeedAsync();
+    await EnsurePageNavigationColumnsAsync(context);
 }
 
 app.Run();
@@ -124,6 +136,8 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA table_info('LowCodePages');";
         var hasSectionName = false;
+        var hasRequiredPermission = false;
+        var hasShowInNavbar = false;
         await using (var reader = await command.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
@@ -131,7 +145,16 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
                 if (string.Equals(reader.GetString(1), "SectionName", StringComparison.OrdinalIgnoreCase))
                 {
                     hasSectionName = true;
-                    break;
+                }
+
+                if (string.Equals(reader.GetString(1), "RequiredPermission", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasRequiredPermission = true;
+                }
+
+                if (string.Equals(reader.GetString(1), "ShowInNavbar", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasShowInNavbar = true;
                 }
             }
         }
@@ -139,6 +162,16 @@ static async Task EnsurePageNavigationColumnsAsync(AppDbContext context)
         if (!hasSectionName)
         {
             await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN SectionName TEXT NULL;");
+        }
+
+        if (!hasRequiredPermission)
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN RequiredPermission TEXT NULL;");
+        }
+
+        if (!hasShowInNavbar)
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE LowCodePages ADD COLUMN ShowInNavbar INTEGER NOT NULL DEFAULT 1;");
         }
     }
     finally

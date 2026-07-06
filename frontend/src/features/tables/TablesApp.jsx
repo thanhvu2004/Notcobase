@@ -14,6 +14,7 @@ import {
   updateRecord,
   updateTable,
 } from './tablesApi'
+import { createPermissionChecker } from '../auth/permissions'
 
 const fieldTypes = ['text', 'longtext', 'url', 'number', 'finance', 'date', 'checkbox', 'select', 'reference', 'file']
 
@@ -120,12 +121,18 @@ function getRecordValue(record, columnName) {
 }
 
 function Modal({ title, children, onClose }) {
+  function handleClose(event) {
+    event?.preventDefault()
+    event?.stopPropagation()
+    onClose?.()
+  }
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={handleClose}>
       <section className="modal-panel" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal-header">
           <h2>{title}</h2>
-          <button type="button" className="secondary icon-button" onClick={onClose} aria-label="Close">
+          <button type="button" className="secondary icon-button" onMouseDown={(event) => event.stopPropagation()} onClick={handleClose} aria-label="Close">
             x
           </button>
         </header>
@@ -247,7 +254,7 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
           </label>
         )}
         <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" disabled={saving || (form.inheritProperties && !form.parentTableId)}>
@@ -443,7 +450,7 @@ function RecordModal({ title, columns, form, setForm, saving, onSubmit, onClose 
           </label>
         ))}
         <footer className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" disabled={saving || formColumns.length === 0}>
@@ -455,7 +462,7 @@ function RecordModal({ title, columns, form, setForm, saving, onSubmit, onClose 
   )
 }
 
-function RecordsDataGrid({ columns, records, loading, onEditRecord, onDeleteRecord }) {
+function RecordsDataGrid({ columns, records, loading, canEditRecord, canDeleteRecord, onEditRecord, onDeleteRecord }) {
   const gridRows = useMemo(
     () =>
       records.map((record) => ({
@@ -485,7 +492,7 @@ function RecordsDataGrid({ columns, records, loading, onEditRecord, onDeleteReco
         type: getGridColumnType(column),
         valueFormatter: (value) => formatRecordValue(value, column.fieldType),
       })),
-      {
+      ...(canDeleteRecord ? [{
         field: '__actions',
         headerName: 'Actions',
         width: 170,
@@ -499,9 +506,9 @@ function RecordsDataGrid({ columns, records, loading, onEditRecord, onDeleteReco
             </button>
           </div>
         ),
-      },
+      }] : []),
     ],
-    [columns, onDeleteRecord],
+    [canDeleteRecord, columns, onDeleteRecord],
   )
 
   return (
@@ -516,13 +523,13 @@ function RecordsDataGrid({ columns, records, loading, onEditRecord, onDeleteReco
         pagination: { paginationModel: { pageSize: 25, page: 0 } },
       }}
       pageSizeOptions={[10, 25, 50, 100]}
-      onRowDoubleClick={(params) => onEditRecord(params.row.__record)}
+      onRowDoubleClick={(params) => canEditRecord && onEditRecord(params.row.__record)}
       getRowHeight={() => 'auto'}
     />
   )
 }
 
-export default function TablesApp() {
+export default function TablesApp({ user }) {
   const [tables, setTables] = useState([])
   const [selectedTable, setSelectedTable] = useState(null)
   const [columns, setColumns] = useState([])
@@ -538,6 +545,17 @@ export default function TablesApp() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const can = createPermissionChecker(user)
+  const canCreateTable = can('tables.create')
+  const canEditTable = can('tables.edit')
+  const canDeleteTable = can('tables.delete')
+  const canCreateField = can('columns.create')
+  const canEditField = can('columns.edit')
+  const canDeleteField = can('columns.delete')
+  const canReorderFields = canEditField
+  const canCreateRecord = can('records.create')
+  const canEditRecord = can('records.edit')
+  const canDeleteRecord = can('records.delete')
 
   const activeTable = useMemo(
     () => tables.find((table) => table.id === selectedTable?.id) || selectedTable,
@@ -589,12 +607,14 @@ export default function TablesApp() {
   }, [])
 
   function openCreateTable() {
+    if (!canCreateTable) return
     setTableForm(emptyTableForm)
     setEditingTable(null)
     setModal('table')
   }
 
   function openEditTable(table) {
+    if (!canEditTable) return
     setEditingTable(table)
     setTableForm({
       name: table.name || '',
@@ -611,6 +631,7 @@ export default function TablesApp() {
   }
 
   function openEditField(column) {
+    if (!canEditField) return
     setEditingColumn(column)
     setColumnForm({
       name: column.name || '',
@@ -621,12 +642,14 @@ export default function TablesApp() {
   }
 
   function openCreateRecord() {
+    if (!canCreateRecord) return
     setEditingRecord(null)
     setRecordForm(emptyRecord(columns))
     setModal('record')
   }
 
   function openEditRecord(record) {
+    if (!canEditRecord) return
     setEditingRecord(record)
     setRecordForm(
       getVisibleFormColumns(columns).reduce((values, column) => {
@@ -638,6 +661,7 @@ export default function TablesApp() {
   }
 
   async function handleReorderColumn(targetColumn) {
+    if (!canReorderFields) return
     if (!activeTable || !draggedColumnId || draggedColumnId === targetColumn.id || targetColumn.isInherited) return
 
     const draggedColumn = columns.find((column) => column.id === draggedColumnId)
@@ -679,6 +703,7 @@ export default function TablesApp() {
   async function handleSaveTable(event) {
     event.preventDefault()
     if (!tableForm.name.trim()) return
+    if (editingTable?.id ? !canEditTable : !canCreateTable) return
 
     const payload = {
       name: tableForm.name.trim(),
@@ -711,6 +736,7 @@ export default function TablesApp() {
   }
 
   async function handleDeleteTable(table) {
+    if (!canDeleteTable) return
     if (!confirm(`Delete "${table.name}" and all of its data?`)) return
     setSaving(true)
     try {
@@ -732,6 +758,7 @@ export default function TablesApp() {
   async function handleSaveColumn(event) {
     event.preventDefault()
     if (!activeTable || !columnForm.name.trim()) return
+    if (editingColumn ? !canEditField : !canCreateField) return
 
     const payload = {
       name: columnForm.name.trim(),
@@ -760,6 +787,7 @@ export default function TablesApp() {
   }
 
   async function handleDeleteColumn(column) {
+    if (!canDeleteField) return
     if (!confirm(`Delete field "${column.name}"? Existing record data will remain hidden.`)) return
     setSaving(true)
     try {
@@ -776,6 +804,7 @@ export default function TablesApp() {
   async function handleSaveRecord(event) {
     event.preventDefault()
     if (!activeTable || columns.length === 0) return
+    if (editingRecord ? !canEditRecord : !canCreateRecord) return
 
     const data = getVisibleFormColumns(columns).reduce((values, column) => {
       const value = coerceRecordValue(recordForm[column.name], column.fieldType, column.componentPropsJson)
@@ -801,6 +830,7 @@ export default function TablesApp() {
   }
 
   async function handleDeleteRecord(record) {
+    if (!canDeleteRecord) return
     if (!confirm('Delete this record?')) return
     setSaving(true)
     try {
@@ -823,9 +853,11 @@ export default function TablesApp() {
           </button>
         </div>
 
-        <button type="button" className="wide-action" onClick={openCreateTable}>
-          Create table
-        </button>
+        {canCreateTable && (
+          <button type="button" className="wide-action" onClick={openCreateTable}>
+            Create table
+          </button>
+        )}
 
         <div className="table-list">
           <h2>Tables</h2>
@@ -859,15 +891,21 @@ export default function TablesApp() {
                 <p>{activeTable.description || 'No description'}</p>
               </div>
               <div className="button-row">
-                <button type="button" onClick={openCreateRecord} disabled={getVisibleFormColumns(columns).length === 0}>
-                  Add record
-                </button>
-                <button type="button" className="secondary" onClick={() => openEditTable(activeTable)}>
-                  Edit table
-                </button>
-                <button type="button" className="danger" onClick={() => handleDeleteTable(activeTable)}>
-                  Delete
-                </button>
+                {canCreateRecord && (
+                  <button type="button" onClick={openCreateRecord} disabled={getVisibleFormColumns(columns).length === 0}>
+                    Add record
+                  </button>
+                )}
+                {canEditTable && (
+                  <button type="button" className="secondary" onClick={() => openEditTable(activeTable)}>
+                    Edit table
+                  </button>
+                )}
+                {canDeleteTable && (
+                  <button type="button" className="danger" onClick={() => handleDeleteTable(activeTable)}>
+                    Delete
+                  </button>
+                )}
               </div>
             </header>
 
@@ -880,9 +918,9 @@ export default function TablesApp() {
                     <div
                       key={column.id}
                       className={draggedColumnId === column.id ? 'field-row dragging' : 'field-row'}
-                      draggable={!column.isInherited}
+                      draggable={canReorderFields && !column.isInherited}
                       onDragStart={(event) => {
-                        if (column.isInherited) return
+                        if (!canReorderFields || column.isInherited) return
                         event.dataTransfer.effectAllowed = 'move'
                         event.dataTransfer.setData('text/plain', String(column.id))
                         setDraggedColumnId(column.id)
@@ -910,14 +948,18 @@ export default function TablesApp() {
                           </span>
                         </div>
                       </div>
-                      {!column.isInherited && (
+                      {!column.isInherited && (canEditField || canDeleteField) && (
                         <div className="button-row compact">
-                          <button type="button" className="secondary" onClick={() => openEditField(column)}>
-                            Edit
-                          </button>
-                          <button type="button" className="danger" onClick={() => handleDeleteColumn(column)}>
-                            Delete
-                          </button>
+                          {canEditField && (
+                            <button type="button" className="secondary" onClick={() => openEditField(column)}>
+                              Edit
+                            </button>
+                          )}
+                          {canDeleteField && (
+                            <button type="button" className="danger" onClick={() => handleDeleteColumn(column)}>
+                              Delete
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -926,15 +968,17 @@ export default function TablesApp() {
                 </div>
               </section>
 
-              <FieldForm
-                title={editingColumn ? `Edit field ${editingColumn.name}` : 'Add field'}
-                form={columnForm}
-                setForm={setColumnForm}
-                tables={tables}
-                saving={saving}
-                onSubmit={handleSaveColumn}
-                onReset={resetFieldForm}
-              />
+              {(canCreateField || (canEditField && editingColumn)) && (
+                <FieldForm
+                  title={editingColumn ? `Edit field ${editingColumn.name}` : 'Add field'}
+                  form={columnForm}
+                  setForm={setColumnForm}
+                  tables={tables}
+                  saving={saving}
+                  onSubmit={handleSaveColumn}
+                  onReset={resetFieldForm}
+                />
+              )}
             </div>
 
             <section className="records-section">
@@ -946,6 +990,8 @@ export default function TablesApp() {
                   columns={columns}
                   records={records}
                   loading={loading}
+                  canEditRecord={canEditRecord}
+                  canDeleteRecord={canDeleteRecord}
                   onEditRecord={openEditRecord}
                   onDeleteRecord={handleDeleteRecord}
                 />

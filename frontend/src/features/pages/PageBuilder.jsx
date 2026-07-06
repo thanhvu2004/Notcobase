@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import 'antd/dist/reset.css'
 import { deletePage, fetchPage, updatePage } from './pagesApi'
 import { fetchTableDetails, fetchTables } from '../tables/tablesApi'
+import { permissionsApi } from '../users/usersApi'
 import { blockComponents, componentTypes, defaultSchema, fieldComponents } from './pageBuilder/constants'
 import {
   collectFieldOptions,
@@ -11,11 +12,11 @@ import {
   parseProps,
 } from './pageBuilder/dataUtils'
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
-import { createId, createNode, findNode, insertNode, moveNode, moveNodeToPosition, normalizeSchema, removeNode, updateNode } from './pageBuilder/schemaUtils'
+import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, removeNodeAndPromoteChildren, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
-import TreeNode from './pageBuilder/TreeNode'
+// import TreeNode from './pageBuilder/TreeNode'
 
-export default function PageBuilder({ pageId, pages = [], editorMode, onPagesChanged, onNavigate }) {
+export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate, onNavigateBack, navigationSearch = '' }) {
   const [page, setPage] = useState(null)
   const [schema, setSchema] = useState(defaultSchema)
   const [selectedNodeId, setSelectedNodeId] = useState(null)
@@ -23,8 +24,10 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [tables, setTables] = useState([])
+  const [permissions, setPermissions] = useState([])
   const [tableDetailsById, setTableDetailsById] = useState({})
   const [dragState, setDragState] = useState(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState(null)
 
   useEffect(() => {
     let ignore = false
@@ -49,17 +52,34 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
 
   useEffect(() => {
     let ignore = false
-    fetchTables()
-      .then((nextTables) => {
+
+    if (!editorMode) {
+      queueMicrotask(() => {
+        if (ignore) return
+        setTables([])
+        setPermissions([])
+      })
+      return () => {
+        ignore = true
+      }
+    }
+
+    Promise.all([
+      (can('tables.view') ? fetchTables() : Promise.resolve([])).then((nextTables) => {
         if (!ignore) setTables(nextTables)
-      })
-      .catch((err) => {
-        if (!ignore) setError(err.message)
-      })
+      }),
+      (can('permissions.view') || can('pages.editor') ? permissionsApi.list() : Promise.resolve([])).then((nextPermissions) => {
+        if (!ignore) setPermissions(nextPermissions)
+      }).catch(() => {
+        if (!ignore) setPermissions([])
+      }),
+    ]).catch((err) => {
+      if (!ignore) setError(err.message)
+    })
     return () => {
       ignore = true
     }
-  }, [])
+  }, [editorMode, can])
 
   useEffect(() => {
     const tableIds = new Set()
@@ -83,11 +103,27 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
 
     Array.from(tableIds).forEach((tableId) => {
       if (tableDetailsById[tableId]) return
+      if (!editorMode && (!can('columns.view') || !can('records.view'))) {
+        setTableDetailsById((current) => ({
+          ...current,
+          [tableId]: { columns: [], records: [], forbidden: true },
+        }))
+        return
+      }
       fetchTableDetails(tableId)
         .then((details) => setTableDetailsById((current) => ({ ...current, [tableId]: details })))
-        .catch((err) => setError(err.message))
+        .catch((err) => {
+          if (err.status === 403) {
+            setTableDetailsById((current) => ({
+              ...current,
+              [tableId]: { columns: [], records: [], forbidden: true },
+            }))
+            return
+          }
+          setError(err.message)
+        })
     })
-  }, [schema, tableDetailsById])
+  }, [schema, tableDetailsById, editorMode, can])
 
   async function reloadTableDetails(tableId) {
     const details = await fetchTableDetails(tableId)
@@ -113,6 +149,8 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
       const updated = await updatePage(page.id, {
         name: page.name,
         sectionName: page.sectionName,
+        requiredPermission: page.requiredPermission,
+        showInNavbar: page.showInNavbar !== false,
         schemaJson: JSON.stringify(schema),
         isPublished: true,
       })
@@ -144,6 +182,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     setSchema((currentSchema) => moveNodeToPosition(currentSchema, dragState.draggedNodeId, dropTarget.nodeId, dropTarget.position))
     setSelectedNodeId(dragState.draggedNodeId)
     setDragState(null)
+  }
+
+  function handleDeleteNode(nodeId) {
+    if (!nodeId || nodeId === schema.id) return
+    setSchema((currentSchema) => removeNodeAndPromoteChildren(currentSchema, nodeId))
+    setSelectedNodeId(schema.id)
+    setDragState(null)
+    setHoveredNodeId(null)
   }
 
   function patchSelected(patch) {
@@ -283,7 +329,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
     }))
   }
 
-  if (!page) {
+  if (!page || page.id !== pageId) {
     return <main className="page-builder-shell"><p className="muted">{error || 'Loading page...'}</p></main>
   }
 
@@ -297,6 +343,29 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
             <label>
               Page name
               <input value={page.name} onChange={(event) => setPage({ ...page, name: event.target.value })} />
+            </label>
+            <label>
+              Required permission
+              <select
+                value={page.requiredPermission || ''}
+                onChange={(event) => setPage({ ...page, requiredPermission: event.target.value || null })}
+              >
+                <option value="">Public to signed-in users</option>
+                {permissions.map((permission) => (
+                  <option key={permission.id} value={permission.permissionName}>
+                    {permission.permissionName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-row">
+              <input
+                className="custom-checkbox"
+                type="checkbox"
+                checked={page.showInNavbar !== false}
+                onChange={(event) => setPage({ ...page, showInNavbar: event.target.checked })}
+              />
+              Show in navbar
             </label>
             <div className="button-row">
               <button type="button" disabled={saving} onClick={savePage}>{saving ? 'Saving...' : 'Save'}</button>
@@ -314,6 +383,8 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
             </div>
           </section>
 
+{/*       TreeNode being too laggy for some reason  */}
+{/* 
           <section className="panel">
             <div className="panel page-tree">
               <h3>Arrange</h3>
@@ -324,7 +395,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
               <button type="button" className="secondary" onClick={() => setSchema(moveNode(schema, selected.id, 'down'))}>Down</button>
               {selected.id !== schema.id && <button type="button" className="danger" onClick={() => setSchema(removeNode(schema, selected.id))}>Remove</button>}
             </div>
-          </section>
+          </section> */}
 
           <section className="panel">
             <h3>Configure</h3>
@@ -515,6 +586,25 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
                     <label>
                       Submit label
                       <input value={selected['x-component-props']?.submitLabel || 'Save'} onChange={(event) => patchSelectedProps({ submitLabel: event.target.value })} />
+                    </label>
+                    <label>
+                      After save
+                      <select value={selected['x-component-props']?.saveAction || 'none'} onChange={(event) => patchSelectedProps({ saveAction: event.target.value })}>
+                        <option value="none">Stay on page</option>
+                        <option value="navigate">Navigate to page</option>
+                        <option value="back">Navigate back</option>
+                      </select>
+                    </label>
+                    <label>
+                      Save target page
+                      <select disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={selected['x-component-props']?.saveTargetPageId || ''} onChange={(event) => patchSelectedProps({ saveTargetPageId: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">Select page</option>
+                        {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Save navigation params JSON
+                      <textarea rows="3" disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.saveNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('saveNavigationParams', event.target.value)} />
                     </label>
                     <label className="check-row">
                       <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.useFormGroup)} onChange={(event) => patchSelectedProps({ useFormGroup: event.target.checked })} />
@@ -795,6 +885,24 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
                         <option value="select">Select picker</option>
                       </select>
                     </label>
+                    <label>
+                      Add record action
+                      <select value={selected['x-component-props']?.referenceCreateAction || 'modal'} onChange={(event) => patchSelectedProps({ referenceCreateAction: event.target.value })}>
+                        <option value="modal">Open modal</option>
+                        <option value="navigate">Navigate to page</option>
+                      </select>
+                    </label>
+                    <label>
+                      Add record target page
+                      <select disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={selected['x-component-props']?.referenceCreateTargetPageId || ''} onChange={(event) => patchSelectedProps({ referenceCreateTargetPageId: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">Select page</option>
+                        {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Add record query params JSON
+                      <textarea rows="3" disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.referenceCreateNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('referenceCreateNavigationParams', event.target.value)} />
+                    </label>
                   </>
                 )}
                 <label className="check-row">
@@ -809,6 +917,43 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
                   <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.hiddenInForms)} onChange={(event) => patchSelectedProps({ hiddenInForms: event.target.checked })} />
                   Hidden in forms
                 </label>
+                {['Input', 'Input.TextArea', 'Textarea'].includes(selected['x-component']) && (
+                  <div className="builder-config-group">
+                    <strong>Value generator</strong>
+                    <label className="check-row">
+                      <input
+                        className="custom-checkbox"
+                        type="checkbox"
+                        checked={Boolean(selected['x-component-props']?.valueGeneratorEnabled)}
+                        onChange={(event) => patchSelectedProps({
+                          valueGeneratorEnabled: event.target.checked,
+                          valueGeneratorEditable: selected['x-component-props']?.valueGeneratorEditable ?? true,
+                        })}
+                      />
+                      Generate value
+                    </label>
+                    <label>
+                      Template
+                      <textarea
+                        rows="3"
+                        disabled={!selected['x-component-props']?.valueGeneratorEnabled}
+                        placeholder="INV-{YYYY}{MM}-{seq:6}"
+                        value={selected['x-component-props']?.valueGeneratorTemplate || ''}
+                        onChange={(event) => patchSelectedProps({ valueGeneratorTemplate: event.target.value })}
+                      />
+                    </label>
+                    <label className="check-row">
+                      <input
+                        className="custom-checkbox"
+                        type="checkbox"
+                        disabled={!selected['x-component-props']?.valueGeneratorEnabled}
+                        checked={selected['x-component-props']?.valueGeneratorEditable !== false}
+                        onChange={(event) => patchSelectedProps({ valueGeneratorEditable: event.target.checked })}
+                      />
+                      Allow manual edits
+                    </label>
+                  </div>
+                )}
                 <div className="builder-config-group">
                   <strong>Visibility</strong>
                   <label>
@@ -877,9 +1022,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, onPagesCha
           reloadTableDetails,
           getFormGroup,
           onNavigate,
+          onNavigateBack,
+          navigationSearch,
           dragState,
           setDragState,
+          hoveredNodeId,
+          setHoveredNodeId,
           onNodeDrop: handleNodeDrop,
+          onDeleteNode: handleDeleteNode,
           rootNodeId: schema.id,
         })}
       </section>
