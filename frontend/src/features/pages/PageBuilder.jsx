@@ -28,6 +28,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
   const [tableDetailsById, setTableDetailsById] = useState({})
   const [dragState, setDragState] = useState(null)
   const [hoveredNodeId, setHoveredNodeId] = useState(null)
+  const [selectOptionsText, setSelectOptionsText] = useState('')
 
   useEffect(() => {
     let ignore = false
@@ -143,6 +144,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
   const selected = useMemo(() => findNode(schema, selectedNodeId)?.node || schema, [schema, selectedNodeId])
   const fieldOptions = useMemo(() => collectFieldOptions(schema, selectedNodeId), [schema, selectedNodeId])
 
+  useEffect(() => {
+    if (selected?.['x-component'] === 'Select') {
+      setSelectOptionsText((selected['x-component-props']?.options || selected.enum || []).join('\n'))
+    }
+  }, [selected])
+
   async function savePage() {
     setSaving(true)
     try {
@@ -204,6 +211,10 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
   }
 
   function patchSelectOptions(text) {
+    setSelectOptionsText(text)
+  }
+
+  function syncSelectOptions(text) {
     const options = text.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
     setSchema(updateNode(schema, selected.id, (node) => ({
       ...node,
@@ -212,7 +223,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
         ...(node['x-component-props'] || {}),
         options,
         defaultValue: options.includes(node['x-component-props']?.defaultValue)
-          ? node['x-component-props'].defaultValue
+          ? node['x-component-props']?.defaultValue
           : options[0] || '',
       },
     })))
@@ -1025,8 +1036,9 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                 Options, one per line
                 <textarea
                   rows="5"
-                  value={(selected['x-component-props']?.options || selected.enum || []).join('\n')}
+                  value={selectOptionsText}
                   onChange={(event) => patchSelectOptions(event.target.value)}
+                  onBlur={(event) => syncSelectOptions(event.target.value)}
                 />
               </label>
             )}
