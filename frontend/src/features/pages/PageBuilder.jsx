@@ -203,6 +203,21 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
     })))
   }
 
+  function patchSelectOptions(text) {
+    const options = text.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+    setSchema(updateNode(schema, selected.id, (node) => ({
+      ...node,
+      enum: options,
+      'x-component-props': {
+        ...(node['x-component-props'] || {}),
+        options,
+        defaultValue: options.includes(node['x-component-props']?.defaultValue)
+          ? node['x-component-props'].defaultValue
+          : options[0] || '',
+      },
+    })))
+  }
+
   function patchJsonProp(key, text) {
     try {
       const parsed = JSON.parse(text || '{}')
@@ -1007,8 +1022,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             )}
             {selected['x-component'] === 'Select' && (selected['x-component-props']?.optionMode || 'static') === 'static' && (
               <label>
-                Options
-                <textarea rows="3" value={(selected.enum || []).join('\n')} onChange={(event) => patchSelected({ enum: event.target.value.split('\n').filter(Boolean) })} />
+                Options, one per line
+                <textarea
+                  rows="5"
+                  value={(selected['x-component-props']?.options || selected.enum || []).join('\n')}
+                  onChange={(event) => patchSelectOptions(event.target.value)}
+                />
               </label>
             )}
           </section>

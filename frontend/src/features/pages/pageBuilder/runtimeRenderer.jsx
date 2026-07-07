@@ -606,7 +606,7 @@ function FieldInput({ node, column, formContext, runtimeData }) {
   if (component === 'Select' || fieldType === 'select') {
     const options = props.optionMode === 'dynamic'
       ? getDynamicSelectOptions(props, runtimeData, formContext?.values || {})
-      : (node.enum || props.options || []).map((option) => ({
+      : (props.options || node.enum || []).map((option) => ({
           value: getOptionValue(option),
           label: getOptionLabel(option),
         }))
