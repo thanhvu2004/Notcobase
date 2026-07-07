@@ -12,7 +12,7 @@ import {
   parseProps,
 } from './pageBuilder/dataUtils'
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
-import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, removeNodeAndPromoteChildren, updateNode } from './pageBuilder/schemaUtils'
+import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, removeNode, removeNodeAndPromoteChildren, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
 // import TreeNode from './pageBuilder/TreeNode'
 
@@ -193,10 +193,26 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
 
   function handleDeleteNode(nodeId) {
     if (!nodeId || nodeId === schema.id) return
-    setSchema((currentSchema) => removeNodeAndPromoteChildren(currentSchema, nodeId))
+    const node = findNode(schema, nodeId)?.node
+    const nextSchema = node && ['FormBlock', 'TableBlock'].includes(node['x-component'])
+      ? removeNode(schema, nodeId)
+      : removeNodeAndPromoteChildren(schema, nodeId)
+    setSchema(nextSchema)
     setSelectedNodeId(schema.id)
     setDragState(null)
     setHoveredNodeId(null)
+  }
+
+  function clearBlockColumns(kind) {
+    if (kind === 'form') {
+      setSchema(updateNode(schema, selected.id, (node) => ({
+        ...node,
+        properties: {},
+        'x-component-props': { ...(node['x-component-props'] || {}), formColumns: [] },
+      })))
+      return
+    }
+    patchSelectedProps({ columns: [] })
   }
 
   function patchSelected(patch) {
@@ -721,7 +737,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                   <strong>{selected['x-component'] === 'FormBlock' ? 'Form fields from columns' : 'Table columns'}</strong>
                   <div className="button-row compact">
                     <button type="button" className="secondary" onClick={() => selectAllBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Select all</button>
-                    <button type="button" className="secondary" onClick={() => patchSelectedProps(selected['x-component'] === 'FormBlock' ? { formColumns: [] } : { columns: [] })}>Clear</button>
+                    <button type="button" className="secondary" onClick={() => clearBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Clear</button>
                   </div>
                   <div className="builder-column-list">
                     {getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => {
