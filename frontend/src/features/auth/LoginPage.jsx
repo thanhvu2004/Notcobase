@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { login } from './authApi'
+import { t } from '../../shared/locale'
 
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState('')
@@ -28,18 +29,18 @@ export default function LoginPage({ onLogin }) {
     <main className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
         <div>
-          <h1>Sign in</h1>
+          <h1>{t('signIn')}</h1>
         </div>
 
         {error && <div className="error-banner">{error}</div>}
 
         <label>
-          Username
+          {t('username')}
           <input value={username} onChange={(event) => setUsername(event.target.value)} required />
         </label>
 
         <label>
-          Password
+          {t('password')}
           <input
             type="password"
             value={password}
@@ -49,7 +50,7 @@ export default function LoginPage({ onLogin }) {
         </label>
 
         <button type="submit" disabled={loading}>
-          {loading ? 'Signing in...' : 'Sign in'}
+          {loading ? t('signingIn') : t('signIn')}
         </button>
       </form>
     </main>

@@ -29,6 +29,7 @@ import {
 } from './dataUtils'
 import { getFormGroupKey } from './formGroups'
 import { getColProps, normalizeGutter } from './layoutUtils'
+import { t } from '../../../shared/locale'
 
 function RequiredLabel({ children, required }) {
   return (
@@ -247,7 +248,7 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
     if (!targetTableId) return
     const missingRequiredColumn = getMissingRequiredColumn(visibleColumns, draft)
     if (missingRequiredColumn) {
-      message.error(`${missingRequiredColumn.name} is required`)
+      message.error(t('fieldRequired', { name: missingRequiredColumn.name }))
       return
     }
 
@@ -275,14 +276,14 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
     setDraft({})
   }
 
-  if (!targetTableId) return <p className="muted">Configure a target table for this reference field.</p>
+  if (!targetTableId) return <p className="muted">{t('configureTargetTableReference')}</p>
 
   return (
     <div className="reference-table-field">
       <div className="reference-table-toolbar">
-        <span className="muted">{related ? `${records.length + relatedValue.drafts.length} related` : `${selectedIds.length} selected`}</span>
-        <button type="button" className="secondary" disabled={disabled} onClick={openCreate}>Add record</button>
-      </div>
+          <span className="muted">{related ? `${records.length + relatedValue.drafts.length} ${t('related')}` : `${selectedIds.length} ${t('selected')}`}</span>
+          <button type="button" className="secondary" disabled={disabled} onClick={openCreate}>{t('addRecord')}</button>
+        </div>
       {related && !parentRecordId && relatedValue.drafts.length > 0 && (
         <p className="muted">{relatedValue.drafts.length} new related record{relatedValue.drafts.length === 1 ? '' : 's'} will be created after the parent record is saved.</p>
       )}
@@ -303,7 +304,7 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
                 />
               </th>
               {visibleColumns.map((column) => <th key={column.id}>{column.name}</th>)}
-              <th>Actions</th>
+              <th>{t('actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -321,28 +322,28 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
                 {visibleColumns.map((column) => (
                   <td key={column.id}>{formatValue(record.data?.[column.name], column.fieldType, column.componentPropsJson, runtimeData)}</td>
                 ))}
-                <td><button type="button" className="secondary" disabled={disabled} onClick={() => openEdit(record)}>Edit</button></td>
+                <td><button type="button" className="secondary" disabled={disabled} onClick={() => openEdit(record)}>{t('edit')}</button></td>
               </tr>
             ))}
             {relatedValue.drafts.map((item, index) => (
               <tr key={`draft-${index}`}>
                 <td />
                 {visibleColumns.map((column) => <td key={column.id}>{String(item?.[column.name] ?? '')}</td>)}
-                <td><span className="muted">Draft</span></td>
+                <td><span className="muted">{t('draft')}</span></td>
               </tr>
             ))}
             {!records.length && !relatedValue.drafts.length && (
-              <tr><td colSpan={visibleColumns.length + 2} className="muted">No records</td></tr>
+              <tr><td colSpan={visibleColumns.length + 2} className="muted">{t('noRecords')}</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <small className="muted">Display column: {displayColumnName}</small>
+      <small className="muted">{t('displayColumn')}: {displayColumnName}</small>
       {modalOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={closeModal}>
           <section className="modal-panel reference-modal-panel" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <header className="modal-header">
-              <h2>{editingRecord ? 'Edit referenced record' : 'Create referenced record'}</h2>
+              <h2>{editingRecord ? t('editReferencedRecord') : t('createReferencedRecord')}</h2>
               <button type="button" className="secondary icon-button" onMouseDown={(event) => event.stopPropagation()} onClick={closeModal} aria-label="Close">x</button>
             </header>
             <div className="modal-form">
@@ -375,8 +376,8 @@ function ReferenceTableField({ value, onChange, config, fieldName, disabled, run
               ))}
             </div>
             <footer className="modal-actions">
-              <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={closeModal}>Cancel</button>
-              <button type="button" onClick={saveReferenceRecord}>Save</button>
+              <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={closeModal}>{t('cancel')}</button>
+              <button type="button" onClick={saveReferenceRecord}>{t('save')}</button>
             </footer>
           </section>
         </div>
@@ -485,7 +486,7 @@ function TableBlockRenderer({ node, editorMode, selectProps, runtimeData }) {
     if (!tableId || saving) return
     const missingRequiredColumn = getMissingRequiredColumn(tableColumns, recordDraft)
     if (missingRequiredColumn) {
-      message.error(`${missingRequiredColumn.name} is required`)
+      message.error(t('fieldRequired', { name: missingRequiredColumn.name }))
       return
     }
 
@@ -571,7 +572,7 @@ function TableBlockRenderer({ node, editorMode, selectProps, runtimeData }) {
               ))}
               <footer className="modal-actions">
                 <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={closeModal}>Cancel</button>
-                <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                <button type="submit" disabled={saving}>{saving ? t('saving') : t('save')}</button>
               </footer>
             </form>
           </section>
@@ -615,7 +616,7 @@ function FieldInput({ node, column, formContext, runtimeData }) {
       <AntSelect
         value={value === '' || value == null ? undefined : value}
         placeholder={waitingForDependency
-          ? props.emptyDependencyPlaceholder || 'Select a parent value first'
+          ? props.emptyDependencyPlaceholder || t('selectParentValueFirst')
           : props.placeholder || 'Select an option'}
         options={options}
         disabled={disabled || waitingForDependency}
@@ -942,7 +943,7 @@ function FormBlockRenderer({ node, editorMode, selectedNodeId, onSelect, selectP
       <div className="form-block-custom-layout">{content}</div>
       {(!props.useFormGroup || props.showGroupSubmit !== false) && (
         <div className="form-actions">
-          <button type="submit" disabled={disabled || saving || !tableId || formColumns.length === 0}>{saving ? 'Saving...' : props.submitLabel || 'Save'}</button>
+          <button type="submit" disabled={disabled || saving || !tableId || formColumns.length === 0}>{saving ? t('saving') : props.submitLabel || t('save')}</button>
         </div>
       )}
     </form>

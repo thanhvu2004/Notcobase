@@ -5,6 +5,7 @@ import { createDefaultPageSchema, createPage, fetchPages, movePageToSection } fr
 import TablesApp from './features/tables/TablesApp'
 import UsersApp from './features/users/UsersApp'
 import { createPermissionChecker } from './features/auth/permissions'
+import { t, setLanguage, getLanguage } from './shared/locale'
 import './App.css'
 import { Breadcrumb, Dropdown } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
@@ -124,7 +125,7 @@ export default function App() {
 
   async function handleCreatePage(sectionName = '') {
     if (!canEditPages) return
-    const name = window.prompt('Page name', 'New page')
+    const name = window.prompt(t('pageNamePrompt'), t('pageNameDefault'))
     if (!name?.trim()) return
 
     setCreatingPage(true)
@@ -153,7 +154,7 @@ export default function App() {
 
   async function handleCreateSection() {
     if (!canEditPages) return
-    const sectionName = window.prompt('Section name', 'New section')
+    const sectionName = window.prompt(t('sectionNamePrompt'), t('sectionNameDefault'))
     if (!sectionName?.trim()) return
     const nextSectionName = sectionName.trim()
     setCustomSections((items) => normalizeSectionList([...items, nextSectionName]))
@@ -369,7 +370,7 @@ export default function App() {
     if (activeEditorMode) return false
 
     if (!targetPageId) {
-      setError('Select a target page first.')
+      setError(t('selectTargetPageFirst'))
       return false
     }
 
@@ -392,6 +393,13 @@ export default function App() {
     setRoute(`page:${Number(targetPageId)}`)
     setError('')
     return true
+  }
+
+  function changeLanguage() {
+    const currentLang = getLanguage()
+    const nextLang = currentLang === 'en' ? 'vi' : 'en'
+    setLanguage(nextLang)
+    window.location.reload()
   }
 
   if (!isAuthenticated) {
@@ -431,25 +439,30 @@ export default function App() {
   const systemMenuItems = [
     can('tables.view') && {
       key: 'tables',
-      label: 'Tables',
+      label: t('tables'),
       onClick: () => navigateRoute('tables'),
     },
     can(['users.view', 'roles.view', 'permissions.view']) && {
       key: 'users',
-      label: 'Users',
+      label: t('users'),
       onClick: () => navigateRoute('users'),
+    },
+    {
+      key: 'change-language',
+      label: t('changeLanguage'),
+      onClick: () => changeLanguage(),
     },
   ].filter(Boolean)
 
   const AddMenuItems = [
     {
       key: 'new-page',
-      label: 'New page',
+      label: t('pageNameDefault'),
       onClick: () => handleCreatePage(),
     },
     {
       key: 'new-section',
-      label: 'New section',
+      label: t('sectionNameDefault'),
       onClick: () => handleCreateSection(),
     },
   ]
@@ -457,15 +470,15 @@ export default function App() {
     {
       title: (
         <button type="button" className="breadcrumb-link" onClick={() => navigateRoute(activeEditorMode ? 'tables' : navPages[0] ? `page:${navPages[0].id}` : route)}>
-          Notcobase
+          {t('brand')}
         </button>
       ),
     },
-    route === 'tables' && { title: 'Tables' },
-    route === 'users' && { title: 'Users' },
+    route === 'tables' && { title: t('tables') },
+    route === 'users' && { title: t('users') },
     activePage?.sectionName && { title: activePage.sectionName },
     activePage && { title: activePage.name },
-    !activePage && activePageId && { title: 'Page not found' },
+    !activePage && activePageId && { title: t('pageNotFound') },
   ].filter(Boolean)
 
   return (
@@ -476,7 +489,7 @@ export default function App() {
           className="brand-button"
           onClick={() => navigateRoute(activeEditorMode ? 'tables' : navPages[0] ? `page:${navPages[0].id}` : route)}
         >
-          Notcobase
+          {t('brand')}
         </button>
         <nav>
           {unsectionedPages.map((page) => (
@@ -551,7 +564,7 @@ export default function App() {
                 type="button"
                 className="nav-add-button"
                 disabled={creatingPage}
-                aria-label="Add page or section"
+                aria-label={t('addPageOrSection')}
               >
                 +
               </button>
@@ -562,7 +575,7 @@ export default function App() {
           {canEditPages && (
             <label className="editor-mode-toggle">
               <input className="custom-checkbox" type="checkbox" checked={activeEditorMode} onChange={(event) => handleEditorModeChange(event.target.checked)} />
-              Editor Mode
+              {t('editorMode')}
             </label>
           )}
           <Dropdown menu={{ items: systemMenuItems }} trigger={['hover']}>
@@ -574,7 +587,7 @@ export default function App() {
             </button>
           </Dropdown>
           <button type="button" className="secondary" onClick={handleLogout}>
-            Log out
+            {t('logout')}
           </button>
         </div>
       </header>
@@ -591,8 +604,8 @@ export default function App() {
         ) : (
           <main className="page-content">
             <section className="empty-state">
-              <h2>Access denied</h2>
-              <p>You do not have permission to manage tables.</p>
+              <h2>{t('accessDenied')}</h2>
+              <p>{t('accessDeniedTables')}</p>
             </section>
           </main>
         )
@@ -602,23 +615,23 @@ export default function App() {
         ) : (
           <main className="page-content">
             <section className="empty-state">
-              <h2>Access denied</h2>
-              <p>You do not have permission to manage users.</p>
+              <h2>{t('accessDenied')}</h2>
+              <p>{t('accessDeniedUsers')}</p>
             </section>
           </main>
         )
       ) : !activeEditorMode && accessiblePages.length === 0 ? (
         <main className="page-content">
           <section className="empty-state">
-            <h2>No pages yet</h2>
-            <p>No pages are available for your account.</p>
+            <h2>{t('noPagesYet')}</h2>
+            <p>{t('noPagesAvailable')}</p>
           </section>
         </main>
       ) : routedPageDenied ? (
         <main className="page-content">
           <section className="empty-state">
-            <h2>Access denied</h2>
-            <p>You do not have permission to view this page.</p>
+            <h2>{t('accessDenied')}</h2>
+            <p>{t('noPermissionViewPage')}</p>
           </section>
         </main>
       ) : activePage ? (
@@ -633,8 +646,8 @@ export default function App() {
       ) : (
         <main className="page-content">
           <section className="empty-state">
-            <h2>Select a page</h2>
-            <p>Choose an existing page from the navigation bar.</p>
+            <h2>{t('selectAPage')}</h2>
+            <p>{t('selectAPageDescription')}</p>
           </section>
         </main>
       )}

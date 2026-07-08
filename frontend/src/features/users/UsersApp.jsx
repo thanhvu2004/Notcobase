@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { permissionsApi, rolesApi, usersApi } from './usersApi'
 import { createPermissionChecker } from '../auth/permissions'
+import { t } from '../../shared/locale'
 
 export default function UsersApp({ user }) {
   const [activeTab, setActiveTab] = useState('users')
@@ -79,7 +80,7 @@ export default function UsersApp({ user }) {
 
   async function handleDeleteUser(user) {
     if (!canDeleteUser) return
-    if (!confirm(`Delete user "${user.username}"?`)) return
+    if (!confirm(t('deleteUserConfirm', { username: user.username }))) return
     try {
       await usersApi.delete(user.id)
       await loadAllData()
@@ -126,7 +127,7 @@ export default function UsersApp({ user }) {
 
   async function handleDeleteRole(role) {
     if (!canDeleteRole) return
-    if (!confirm(`Delete role "${role.roleName}"?`)) return
+    if (!confirm(t('deleteRoleConfirm', { roleName: role.roleName }))) return
     try {
       await rolesApi.delete(role.id)
       await loadAllData()
@@ -164,7 +165,7 @@ export default function UsersApp({ user }) {
 
   async function handleDeletePermission(permission) {
     if (!canDeletePermission) return
-    if (!confirm(`Delete permission "${permission.permissionName}"?`)) return
+    if (!confirm(t('deletePermissionConfirm', { permissionName: permission.permissionName }))) return
     try {
       await permissionsApi.delete(permission.id)
       await loadAllData()
@@ -177,11 +178,11 @@ export default function UsersApp({ user }) {
     <main className="page-content">
       <header className="page-header">
         <div>
-          <h1>Users & Permissions</h1>
-          <p>Manage users, roles, and permission claims.</p>
+          <h1>{t('usersPermissions')}</h1>
+          <p>{t('manageUsersRoles')}</p>
         </div>
         <button type="button" className="outline" onClick={loadAllData} disabled={loading}>
-          Refresh
+          {t('refresh')}
         </button>
       </header>
 
@@ -195,7 +196,7 @@ export default function UsersApp({ user }) {
             className={activeVisibleTab === tab ? 'active' : ''}
             onClick={() => setActiveTab(tab)}
           >
-            {tab}
+            {t(`${tab}Tab`)}
           </button>
         ))}
       </nav>
@@ -205,10 +206,10 @@ export default function UsersApp({ user }) {
           <div className="panel">
             {canCreateUser && (
               <>
-                <h2>Create user</h2>
+                <h2>{t('createUser')}</h2>
                 <form className="panel-form inset" onSubmit={handleCreateUser}>
                   <label>
-                    Username
+                    {t('username')}
                     <input
                       value={userForm.username}
                       onChange={(event) => setUserForm({ ...userForm, username: event.target.value })}
@@ -216,7 +217,7 @@ export default function UsersApp({ user }) {
                     />
                   </label>
                   <label>
-                    Password
+                    {t('password')}
                     <input
                       type="password"
                       value={userForm.password}
@@ -224,12 +225,12 @@ export default function UsersApp({ user }) {
                       required
                     />
                   </label>
-                  <button type="submit">Create user</button>
+                  <button type="submit">{t('createUser')}</button>
                 </form>
               </>
             )}
 
-            <h2>Users</h2>
+            <h2>{t('users')}</h2>
             <div className="list-stack">
               {users.map((user) => (
                 <button
@@ -240,7 +241,7 @@ export default function UsersApp({ user }) {
                 >
                   <span>
                     <strong>{user.username}</strong>
-                    <small>{user.roles?.join(', ') || 'No roles'}</small>
+                    <small>{user.roles?.join(', ') || t('noRoles')}</small>
                   </span>
                   {canDeleteUser && (
                     <span
@@ -252,7 +253,7 @@ export default function UsersApp({ user }) {
                         handleDeleteUser(user)
                       }}
                     >
-                      Delete
+                      {t('delete')}
                     </span>
                   )}
                 </button>
@@ -261,7 +262,9 @@ export default function UsersApp({ user }) {
           </div>
 
           <div className="panel">
-            <h2>{selectedUser ? `${selectedUser.username} roles` : 'Select a user'}</h2>
+            <h2>
+              {selectedUser ? t('selectedUserRolesTitle', { username: selectedUser.username }) : t('selectUser')}
+            </h2>
             {selectedUser ? (
               <>
                 <div className="tag-row">
@@ -276,7 +279,7 @@ export default function UsersApp({ user }) {
                       </span>
                     )
                   ))}
-                  {(selectedUser.roles || []).length === 0 && <p className="muted">No roles assigned.</p>}
+                  {(selectedUser.roles || []).length === 0 && <p className="muted">{t('noRolesAssigned')}</p>}
                 </div>
                 <div className="list-stack">
                   {canViewRoles && roles.map((role) => {
@@ -290,14 +293,14 @@ export default function UsersApp({ user }) {
                         disabled={assigned || !canAssignRole}
                       >
                         <span>{role.roleName}</span>
-                        <small>{assigned ? 'Assigned' : 'Assign'}</small>
+                        <small>{t(assigned ? 'assigned' : 'assign')}</small>
                       </button>
                     )
                   })}
                 </div>
               </>
             ) : (
-              <p className="muted">Choose a user to assign roles.</p>
+              <p className="muted">{t('chooseUserToAssignRoles')}</p>
             )}
           </div>
         </section>
@@ -308,18 +311,18 @@ export default function UsersApp({ user }) {
           <div className="panel">
             {canCreateRole && (
               <>
-                <h2>Create role</h2>
+                <h2>{t('createRole')}</h2>
                 <form className="panel-form inset" onSubmit={handleCreateRole}>
                   <label>
-                    Role name
+                    {t('roleLabel')}
                     <input value={roleName} onChange={(event) => setRoleName(event.target.value)} required />
                   </label>
-                  <button type="submit">Create role</button>
+                  <button type="submit">{t('createRole')}</button>
                 </form>
               </>
             )}
 
-            <h2>Roles</h2>
+            <h2>{t('roles')}</h2>
             <div className="list-stack">
               {roles.map((role) => (
                 <button
@@ -330,7 +333,7 @@ export default function UsersApp({ user }) {
                 >
                   <span>
                     <strong>{role.roleName}</strong>
-                    <small>{role.permissions?.length || 0} permissions</small>
+                    <small>{t('permissionsCount', { count: role.permissions?.length || 0 })}</small>
                   </span>
                   {canDeleteRole && (
                     <span
@@ -342,7 +345,7 @@ export default function UsersApp({ user }) {
                         handleDeleteRole(role)
                       }}
                     >
-                      Delete
+                      {t('delete')}
                     </span>
                   )}
                 </button>
@@ -351,7 +354,9 @@ export default function UsersApp({ user }) {
           </div>
 
           <div className="panel">
-            <h2>{selectedRole ? `${selectedRole.roleName} permissions` : 'Select a role'}</h2>
+            <h2>
+              {selectedRole ? t('selectedRolePermissionsTitle', { roleName: selectedRole.roleName }) : t('selectRole')}
+            </h2>
             {selectedRole ? (
               <div className="check-list">
                 {permissions.map((permission) => (
@@ -367,7 +372,7 @@ export default function UsersApp({ user }) {
                 ))}
               </div>
             ) : (
-              <p className="muted">Choose a role to assign permissions.</p>
+              <p className="muted">{t('chooseRoleToAssignPermissions')}</p>
             )}
           </div>
         </section>
@@ -378,31 +383,31 @@ export default function UsersApp({ user }) {
           <div className="panel">
             {canCreatePermission && (
               <>
-                <h2>Create permission</h2>
+                <h2>{t('createPermissionTitle')}</h2>
                 <form className="panel-form inset" onSubmit={handleCreatePermission}>
                   <label>
-                    Permission name
+                    {t('permissionName')}
                     <input
                       value={permissionName}
                       onChange={(event) => setPermissionName(event.target.value)}
                       required
                     />
                   </label>
-                  <button type="submit">Create permission</button>
+                  <button type="submit">{t('createPermission')}</button>
                 </form>
               </>
             )}
           </div>
 
           <div className="panel">
-            <h2>Permissions</h2>
+            <h2>{t('permissions')}</h2>
             <div className="list-stack">
               {permissions.map((permission) => (
                 <div key={permission.id} className="list-item static">
                   <span>{permission.permissionName}</span>
                   {canDeletePermission && (
                     <button type="button" className="danger" onClick={() => handleDeletePermission(permission)}>
-                      Delete
+                      {t('delete')}
                     </button>
                   )}
                 </div>

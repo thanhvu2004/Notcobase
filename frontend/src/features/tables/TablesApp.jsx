@@ -15,6 +15,7 @@ import {
   updateTable,
 } from './tablesApi'
 import { createPermissionChecker } from '../auth/permissions'
+import { t } from '../../shared/locale'
 
 const fieldTypes = ['text', 'longtext', 'url', 'number', 'finance', 'date', 'checkbox', 'select', 'reference', 'file']
 
@@ -132,7 +133,7 @@ function Modal({ title, children, onClose }) {
       <section className="modal-panel" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal-header">
           <h2>{title}</h2>
-          <button type="button" className="secondary icon-button" onMouseDown={(event) => event.stopPropagation()} onClick={handleClose} aria-label="Close">
+          <button type="button" className="secondary icon-button" onMouseDown={(event) => event.stopPropagation()} onClick={handleClose} aria-label={t('close')}>
             x
           </button>
         </header>
@@ -152,7 +153,7 @@ function renderRecordInput(column, recordForm, setRecordForm) {
     return (
       <label className="check-row field-control">
         <input className='custom-checkbox' type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} />
-        Checked
+        {t('checked')}
       </label>
     )
   }
@@ -160,7 +161,7 @@ function renderRecordInput(column, recordForm, setRecordForm) {
   if (type === 'select') {
     return (
       <select value={value ?? ''} required={column.isRequired} onChange={(event) => setValue(event.target.value)}>
-        <option value="">-- Select --</option>
+        <option value="">{t('selectPlaceholder')}</option>
         {(props.options || []).map((option) => {
           const optionValue = typeof option === 'object' ? option.value : option
           const optionLabel = typeof option === 'object' ? option.label : option
@@ -178,7 +179,7 @@ function renderRecordInput(column, recordForm, setRecordForm) {
     return (
       <input
         value={Array.isArray(value) ? value.join(', ') : value ?? ''}
-        placeholder="Record IDs, comma-separated"
+        placeholder={t('recordIdsCommaSeparated')}
         required={column.isRequired}
         onChange={(event) => setValue(event.target.value)}
       />
@@ -216,11 +217,11 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
     <Modal title={title} onClose={onClose}>
       <form className="modal-form" onSubmit={onSubmit}>
         <label>
-          Name
+          {t('fieldName')}
           <input value={form.name} autoFocus required onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </label>
         <label>
-          Description
+          {t('fieldForm')}
           <textarea rows="3" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </label>
         <label className="check-row">
@@ -236,18 +237,18 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
               })
             }
           />
-          Inherit properties from another table
+          {t('inheritPropertiesFromAnotherTable')}
         </label>
         {form.inheritProperties && (
           <label>
-            Parent table
+            {t('parentTable')}
             <select required value={form.parentTableId} onChange={(event) => setForm({ ...form, parentTableId: event.target.value })}>
-              <option value="">Select parent table</option>
+              <option value="">{t('selectParentTable')}</option>
               {tables
                 .filter((table) => table.id !== editingTableId)
                 .map((table) => (
                   <option key={table.id} value={table.id}>
-                    {table.name} ({table.columnCount || 0} fields)
+                    {table.name} ({table.columnCount || 0} {t('fields')})
                   </option>
                 ))}
             </select>
@@ -255,10 +256,10 @@ function TableModal({ title, form, setForm, tables, editingTableId, saving, onSu
         )}
         <footer className="modal-actions">
           <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
-            Cancel
+            {t('cancel')}
           </button>
           <button type="submit" disabled={saving || (form.inheritProperties && !form.parentTableId)}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t('saving') : t('save')}
           </button>
         </footer>
       </form>
@@ -295,9 +296,9 @@ function SelectOptionsConfig({ form, setForm }) {
 
   return (
     <section className="field-config-panel">
-      <h4>Select options</h4>
+      <h4>{t('selectOptions')}</h4>
       <label>
-        Add option
+        {t('addOption')}
         <div className="inline-input">
           <input
             value={newOption}
@@ -327,11 +328,11 @@ function SelectOptionsConfig({ form, setForm }) {
               }}
             />
             <button type="button" className="danger" onClick={() => updateOptions(options.filter((_, itemIndex) => itemIndex !== index))}>
-              Remove
+              {t('remove')}
             </button>
           </div>
         ))}
-        {options.length === 0 && <p className="muted">No options added yet.</p>}
+        {options.length === 0 && <p className="muted">{t('noOptionsAddedYet')}</p>}
       </div>
     </section>
   )
@@ -359,11 +360,11 @@ function ReferenceConfig({ form, setForm, tables }) {
 
   return (
     <section className="field-config-panel">
-      <h4>Reference settings</h4>
+      <h4>{t('referenceSettings')}</h4>
       <label>
-        Target table
+        {t('targetTable')}
         <select required value={targetTableId} onChange={(event) => updateReference({ targetTableId: event.target.value })}>
-          <option value="">Select table</option>
+          <option value="">{t('selectTable')}</option>
           {tables.map((table) => (
             <option key={table.id} value={table.id}>
               {table.name}
@@ -372,19 +373,19 @@ function ReferenceConfig({ form, setForm, tables }) {
         </select>
       </label>
       <label>
-        Relationship mode
+        {t('relationshipMode')}
         <select value={relationshipMode} onChange={(event) => updateReference({ relationshipMode: event.target.value })}>
-          <option value="lookup">Lookup mode</option>
-          <option value="related">Related record mode</option>
+          <option value="lookup">{t('lookupMode')}</option>
+          <option value="related">{t('relatedRecordMode')}</option>
         </select>
       </label>
       {relationshipMode === 'related' && (
         <label>
-          Parent link field on target table
+          {t('parentLinkFieldOnTargetTable')}
           <input required value={parentFieldName} onChange={(event) => updateReference({ parentFieldName: event.target.value })} />
         </label>
       )}
-      <p className="muted">Display currently defaults to the target record ID.</p>
+      <p className="muted">{t('displayDefaultsTargetRecordId')}</p>
     </section>
   )
 }
@@ -401,11 +402,11 @@ function FieldForm({ form, setForm, title, saving, tables, onSubmit, onReset }) 
         <h3>{title}</h3>
       </div>
         <label>
-          Field name
+          {t('fieldName')}
           <input value={form.name} autoFocus required onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </label>
         <label>
-          Field type
+          {t('fieldType')}
           <select
             value={form.fieldType}
             onChange={(event) => setForm({ ...form, fieldType: event.target.value, componentPropsJson: '{}' })}
@@ -419,16 +420,16 @@ function FieldForm({ form, setForm, title, saving, tables, onSubmit, onReset }) 
         </label>
         <label className="check-row">
           <input  className='custom-checkbox' type="checkbox" checked={form.isRequired} onChange={(event) => setForm({ ...form, isRequired: event.target.checked })} />
-          Required
+          {t('required')}
         </label>
         {form.fieldType === 'select' && <SelectOptionsConfig form={form} setForm={setForm} />}
         {form.fieldType === 'reference' && <ReferenceConfig form={form} setForm={setForm} tables={tables} />}
         <footer className="form-actions">
           <button type="button" className="secondary" onClick={onReset}>
-            Clear
+            {t('clear')}
           </button>
           <button type="submit" disabled={saving || referenceIsIncomplete}>
-            {saving ? 'Saving...' : 'Save field'}
+            {saving ? t('saving') : t('saveField')}
           </button>
         </footer>
       </form>
@@ -451,10 +452,10 @@ function RecordModal({ title, columns, form, setForm, saving, onSubmit, onClose 
         ))}
         <footer className="modal-actions">
           <button type="button" className="secondary" onMouseDown={(event) => event.stopPropagation()} onClick={onClose}>
-            Cancel
+            {t('cancel')}
           </button>
           <button type="submit" disabled={saving || formColumns.length === 0}>
-            {saving ? 'Saving...' : 'Save record'}
+            {saving ? t('saving') : t('saveRecord')}
           </button>
         </footer>
       </form>
@@ -480,7 +481,7 @@ function RecordsDataGrid({ columns, records, loading, canEditRecord, canDeleteRe
     () => [
       {
         field: 'id',
-        headerName: 'ID',
+        headerName: t('id'),
         width: 90,
         type: 'number',
       },
@@ -494,7 +495,7 @@ function RecordsDataGrid({ columns, records, loading, canEditRecord, canDeleteRe
       })),
       ...(canDeleteRecord ? [{
         field: '__actions',
-        headerName: 'Actions',
+        headerName: t('actions'),
         width: 170,
         sortable: false,
         filterable: false,
@@ -502,7 +503,7 @@ function RecordsDataGrid({ columns, records, loading, canEditRecord, canDeleteRe
         renderCell: (params) => (
           <div className="button-row compact grid-actions">
             <button type="button" className="danger" onClick={() => onDeleteRecord(params.row.__record)}>
-              Delete
+              {t('delete')}
             </button>
           </div>
         ),
@@ -737,7 +738,7 @@ export default function TablesApp({ user }) {
 
   async function handleDeleteTable(table) {
     if (!canDeleteTable) return
-    if (!confirm(`Delete "${table.name}" and all of its data?`)) return
+    if (!confirm(t('deleteTableConfirm', { tableName: table.name }))) return
     setSaving(true)
     try {
       await deleteTable(table.id)
@@ -788,7 +789,7 @@ export default function TablesApp({ user }) {
 
   async function handleDeleteColumn(column) {
     if (!canDeleteField) return
-    if (!confirm(`Delete field "${column.name}"? Existing record data will remain hidden.`)) return
+    if (!confirm(t('deleteFieldConfirm', { fieldName: column.name }))) return
     setSaving(true)
     try {
       await deleteColumn(activeTable.id, column.id)
@@ -831,7 +832,7 @@ export default function TablesApp({ user }) {
 
   async function handleDeleteRecord(record) {
     if (!canDeleteRecord) return
-    if (!confirm('Delete this record?')) return
+    if (!confirm(t('deleteRecordConfirm')) ) return
     setSaving(true)
     try {
       await deleteRecord(activeTable.id, record.id)
@@ -847,20 +848,20 @@ export default function TablesApp({ user }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-row">
-          <h1>Notcobase</h1>
+          <h1>{t('brand')}</h1>
           <button type="button" onClick={loadTables} disabled={loading} className="outline">
-            Refresh
+            {t('refresh')}
           </button>
         </div>
 
         {canCreateTable && (
           <button type="button" className="wide-action" onClick={openCreateTable}>
-            Create table
+            {t('createTable')}
           </button>
         )}
 
         <div className="table-list">
-          <h2>Tables</h2>
+          <h2>{t('tablesList')}</h2>
           {tables.map((table) => (
             <button
               key={table.id}
@@ -869,10 +870,10 @@ export default function TablesApp({ user }) {
               onClick={() => loadTable(table)}
             >
               <span>{table.name}</span>
-              <small>{table.columnCount ?? 0} fields</small>
+              <small>{t('fieldsCount', { count: table.columnCount ?? 0 })}</small>
             </button>
           ))}
-          {!loading && tables.length === 0 && <p className="muted">No tables yet.</p>}
+          {!loading && tables.length === 0 && <p className="muted">{t('noTablesYet')}</p>}
         </div>
       </aside>
 
@@ -881,29 +882,29 @@ export default function TablesApp({ user }) {
 
         {!activeTable ? (
           <section className="empty-state">
-            <h2>Select or create a table</h2>
+            <h2>{t('selectOrCreateTable')}</h2>
           </section>
         ) : (
           <>
             <header className="workspace-header">
               <div>
                 <h2>{activeTable.name}</h2>
-                <p>{activeTable.description || 'No description'}</p>
+                <p>{activeTable.description || t('noDescription')}</p>
               </div>
               <div className="button-row">
                 {canCreateRecord && (
                   <button type="button" onClick={openCreateRecord} disabled={getVisibleFormColumns(columns).length === 0}>
-                    Add record
+                    {t('addRecord')}
                   </button>
                 )}
                 {canEditTable && (
                   <button type="button" className="secondary" onClick={() => openEditTable(activeTable)}>
-                    Edit table
+                    {t('editTable')}
                   </button>
                 )}
                 {canDeleteTable && (
                   <button type="button" className="danger" onClick={() => handleDeleteTable(activeTable)}>
-                    Delete
+                    {t('delete')}
                   </button>
                 )}
               </div>
@@ -911,8 +912,8 @@ export default function TablesApp({ user }) {
 
             <div className="fields-layout">
               <section className="panel panel-short fields-panel">
-                <h3>Fields</h3>
-                <p className="muted">Drag and drop to reorder fields</p>
+                <h3>{t('fields')}</h3>
+                <p className="muted">{t('dragDropFields')}</p>
                 <div className="field-list compact-fields">
                   {columns.map((column) => (
                     <div
@@ -943,8 +944,8 @@ export default function TablesApp({ user }) {
                           <span>
                             {column.fieldType || 'text'}
                             <span style={{ color: 'red' }}>{column.isRequired ? ' *' : ''}</span>
-                            {column.isInherited ? ' inherited' : ''}
-                            {isHiddenColumn(column) ? ' hidden' : ''}
+                            {column.isInherited ? ` ${t('inherited')}` : ''}
+                            {isHiddenColumn(column) ? ` ${t('hidden')}` : ''}
                           </span>
                         </div>
                       </div>
@@ -952,25 +953,25 @@ export default function TablesApp({ user }) {
                         <div className="button-row compact">
                           {canEditField && (
                             <button type="button" className="secondary" onClick={() => openEditField(column)}>
-                              Edit
+                              {t('edit')}
                             </button>
                           )}
                           {canDeleteField && (
                             <button type="button" className="danger" onClick={() => handleDeleteColumn(column)}>
-                              Delete
+                              {t('delete')}
                             </button>
                           )}
                         </div>
                       )}
                     </div>
                   ))}
-                  {columns.length === 0 && <p className="muted">Add a field before creating records.</p>}
+                  {columns.length === 0 && <p className="muted">{t('noRecordsMessage')}</p>}
                 </div>
               </section>
 
               {(canCreateField || (canEditField && editingColumn)) && (
                 <FieldForm
-                  title={editingColumn ? `Edit field ${editingColumn.name}` : 'Add field'}
+                  title={editingColumn ? t('editField', { fieldName: editingColumn.name }) : t('addField')}
                   form={columnForm}
                   setForm={setColumnForm}
                   tables={tables}
@@ -983,7 +984,7 @@ export default function TablesApp({ user }) {
 
             <section className="records-section">
               <div className="records-toolbar">
-                <span className="muted">{records.length} records</span>
+                <span className="muted">{t('recordsCount', { count: records.length })}</span>
               </div>
               <div className="data-grid-shell">
                 <RecordsDataGrid
@@ -1003,7 +1004,7 @@ export default function TablesApp({ user }) {
 
       {modal === 'table' && (
         <TableModal
-          title={editingTable ? `Edit ${editingTable.name}` : 'Create table'}
+          title={editingTable ? t('editTableTitle', { tableName: editingTable.name }) : t('createTableTitle')}
           form={tableForm}
           setForm={setTableForm}
           tables={tables}
@@ -1015,7 +1016,7 @@ export default function TablesApp({ user }) {
       )}
       {modal === 'record' && (
         <RecordModal
-          title={editingRecord ? `Edit record #${editingRecord.id}` : `Add record to ${activeTable?.name}`}
+          title={editingRecord ? t('editRecord', { id: editingRecord.id }) : t('addRecordToTable', { tableName: activeTable?.name || '' })}
           columns={columns}
           form={recordForm}
           setForm={setRecordForm}

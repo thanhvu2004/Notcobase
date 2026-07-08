@@ -14,6 +14,7 @@ import {
 import { createFormGroupCoordinator, formGroupCoordinators } from './pageBuilder/formGroups'
 import { createId, createNode, findNode, insertNode, moveNodeToPosition, normalizeSchema, removeNode, removeNodeAndPromoteChildren, updateNode } from './pageBuilder/schemaUtils'
 import { renderNode } from './pageBuilder/runtimeRenderer'
+import { t } from '../../shared/locale'
 // import TreeNode from './pageBuilder/TreeNode'
 
 export default function PageBuilder({ pageId, pages = [], editorMode, can = () => false, onPagesChanged, onNavigate, onNavigateBack, navigationSearch = '' }) {
@@ -372,7 +373,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
   }
 
   if (!page || page.id !== pageId) {
-    return <main className="page-builder-shell"><p className="muted">{error || 'Loading page...'}</p></main>
+    return <main className="page-builder-shell"><p className="muted">{error || t('loadingPage')}</p></main>
   }
 
   return (
@@ -381,18 +382,18 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
       {editorMode && (
         <aside className="page-builder-sidebar">
           <section className="panel">
-            <h3>Page</h3>
+            <h3>{t('page')}</h3>
             <label>
-              Page name
+              {t('pageNamePrompt')}
               <input value={page.name} onChange={(event) => setPage({ ...page, name: event.target.value })} />
             </label>
             <label>
-              Required permission
+              {t('requiredPermission')}
               <select
                 value={page.requiredPermission || ''}
                 onChange={(event) => setPage({ ...page, requiredPermission: event.target.value || null })}
               >
-                <option value="">Public to signed-in users</option>
+                <option value="">{t('publicToSignedInUsers')}</option>
                 {permissions.map((permission) => (
                   <option key={permission.id} value={permission.permissionName}>
                     {permission.permissionName}
@@ -407,21 +408,21 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                 checked={page.showInNavbar !== false}
                 onChange={(event) => setPage({ ...page, showInNavbar: event.target.checked })}
               />
-              Show in navbar
+              {t('showInNavbar')}
             </label>
             <div className="button-row">
-              <button type="button" disabled={saving} onClick={savePage}>{saving ? 'Saving...' : 'Save'}</button>
-              <button type="button" className="danger" onClick={handleDeletePage}>Delete</button>
+              <button type="button" disabled={saving} onClick={savePage}>{saving ? t('saving') : t('save')}</button>
+              <button type="button" className="danger" onClick={handleDeletePage}>{t('delete')}</button>
             </div>
           </section>
 
           <section className="panel">
-            <h3>Add component</h3>
+            <h3>{t('addComponent')}</h3>
             <div className="inline-input">
               <select value={componentToAdd} onChange={(event) => setComponentToAdd(event.target.value)}>
                 {componentTypes.map((type) => <option key={type}>{type}</option>)}
               </select>
-              <button type="button" onClick={addComponent}>Add</button>
+              <button type="button" onClick={addComponent}>{t('add')}</button>
             </div>
           </section>
 
@@ -440,29 +441,29 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
           </section> */}
 
           <section className="panel">
-            <h3>Configure</h3>
+            <h3>{t('configure')}</h3>
             <label>
-              Title
+              {t('title')}
               <input value={selected.title || ''} onChange={(event) => patchSelected({ title: event.target.value })} />
             </label>
             {selected['x-component'] === 'Section' && (
-              <label>
-                Layout
+                <label>
+                {t('layout')}
                 <select value={selected['x-component-props']?.layout || 'vertical'} onChange={(event) => patchSelectedProps({ layout: event.target.value })}>
-                  <option value="vertical">Vertical</option>
-                  <option value="horizontal">Horizontal</option>
-                  <option value="grid">Grid</option>
+                  <option value="vertical">{t('vertical')}</option>
+                  <option value="horizontal">{t('horizontal')}</option>
+                  <option value="grid">{t('grid')}</option>
                 </select>
               </label>
             )}
             {selected['x-component'] === 'Grid.Row' && (
               <>
                 <label>
-                  Columns
+                  {t('columns')}
                   <input type="number" min="1" max="12" value={selected['x-component-props']?.columns || Object.keys(selected.properties || {}).length || 2} onChange={(event) => setGridRowColumnCount(event.target.value)} />
                 </label>
                 <label>
-                  Horizontal gutter
+                  {t('horizontalGutter')}
                   <input
                     type="number"
                     min="0"
@@ -475,7 +476,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                   />
                 </label>
                 <label>
-                  Vertical gutter
+                  {t('verticalGutter')}
                   <input
                     type="number"
                     min="0"
@@ -488,51 +489,51 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                   />
                 </label>
                 <label>
-                  Align
+                  {t('align')}
                   <select value={selected['x-component-props']?.align || 'top'} onChange={(event) => patchSelectedProps({ align: event.target.value })}>
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="stretch">Stretch</option>
+                    <option value="top">{t('top')}</option>
+                    <option value="middle">{t('middle')}</option>
+                    <option value="bottom">{t('bottom')}</option>
+                    <option value="stretch">{t('stretch')}</option>
                   </select>
                 </label>
                 <label>
-                  Justify
+                  {t('justify')}
                   <select value={selected['x-component-props']?.justify || 'start'} onChange={(event) => patchSelectedProps({ justify: event.target.value })}>
-                    <option value="start">Start</option>
-                    <option value="end">End</option>
-                    <option value="center">Center</option>
-                    <option value="space-around">Space around</option>
-                    <option value="space-between">Space between</option>
-                    <option value="space-evenly">Space evenly</option>
+                    <option value="start">{t('start')}</option>
+                    <option value="end">{t('end')}</option>
+                    <option value="center">{t('center')}</option>
+                    <option value="space-around">{t('spaceAround')}</option>
+                    <option value="space-between">{t('spaceBetween')}</option>
+                    <option value="space-evenly">{t('spaceEvenly')}</option>
                   </select>
                 </label>
                 <label className="check-row">
                   <input className="custom-checkbox" type="checkbox" checked={selected['x-component-props']?.wrap !== false} onChange={(event) => patchSelectedProps({ wrap: event.target.checked })} />
-                  Wrap columns
+                  {t('wrapColumns')}
                 </label>
               </>
             )}
             {selected['x-component'] === 'Grid.Col' && (
               <>
                 <label>
-                  Span
+                  {t('span')}
                   <input type="number" min="0" max="24" value={selected['x-component-props']?.span ?? 12} onChange={(event) => patchSelectedProps({ span: Number(event.target.value) || 0 })} />
                 </label>
                 <label>
-                  Offset
+                  {t('offset')}
                   <input type="number" min="0" max="24" value={selected['x-component-props']?.offset ?? 0} onChange={(event) => patchSelectedProps({ offset: Number(event.target.value) || 0 })} />
                 </label>
                 <label>
-                  Order
+                  {t('order')}
                   <input type="number" value={selected['x-component-props']?.order ?? ''} onChange={(event) => patchSelectedProps({ order: event.target.value === '' ? undefined : Number(event.target.value) })} />
                 </label>
                 <label>
-                  Flex
-                  <input value={selected['x-component-props']?.flex || ''} placeholder="auto, none, 120px, 1 1 auto" onChange={(event) => patchSelectedProps({ flex: event.target.value })} />
+                  {t('flex')}
+                  <input value={selected['x-component-props']?.flex || ''} placeholder={t('flexPlaceholder')} onChange={(event) => patchSelectedProps({ flex: event.target.value })} />
                 </label>
                 <div className="builder-config-group">
-                  <strong>Responsive spans</strong>
+                  <strong>{t('responsiveSpans')}</strong>
                   {['xs', 'sm', 'md', 'lg', 'xl', 'xxl'].map((breakpoint) => (
                     <label key={breakpoint}>
                       {breakpoint.toUpperCase()}
@@ -551,19 +552,19 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             {selected['x-component'] === 'Tabs' && (
               <>
                 <label>
-                  Tab position
+                  {t('tabPosition')}
                   <select value={selected['x-component-props']?.tabPlacement || 'top'} onChange={(event) => patchSelectedProps({ tabPlacement: event.target.value })}>
-                    <option value="top">Top</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                    <option value="bottom">Bottom</option>
+                    <option value="top">{t('top')}</option>
+                    <option value="left">{t('left')}</option>
+                    <option value="right">{t('right')}</option>
+                    <option value="bottom">{t('bottom')}</option>
                   </select>
                 </label>
                 <div className="builder-config-group">
-                  <strong>Tabs</strong>
+                  <strong>{t('tabs')}</strong>
                   {Object.values(selected.properties || {}).map((tab) => (
                     <label key={tab.id}>
-                      Tab label
+                      {t('tabLabel')}
                       <input value={tab.title || ''} onChange={(event) => setSchema(updateNode(schema, tab.id, (node) => ({ ...node, title: event.target.value })))} />
                     </label>
                   ))}
@@ -571,12 +572,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                     type="button"
                     className="secondary"
                     onClick={() => {
-                      const tab = { ...createNode('Section'), name: createId('tab'), title: `Tab ${Object.keys(selected.properties || {}).length + 1}` }
+                      const tab = { ...createNode('Section'), name: createId('tab'), title: `${t('tab')} ${Object.keys(selected.properties || {}).length + 1}` }
                       setSchema(insertNode(schema, selected.id, tab))
                       setSelectedNodeId(tab.id)
                     }}
                   >
-                    Add tab
+                    {t('addTab')}
                   </button>
                 </div>
               </>
@@ -584,15 +585,15 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             {selected['x-component'] === 'Divider' && (
               <>
                 <label>
-                  Text
+                  {t('text')}
                   <input value={selected['x-component-props']?.text || ''} onChange={(event) => patchSelectedProps({ text: event.target.value })} />
                 </label>
                 <label>
-                  Orientation
+                  {t('orientation')}
                   <select value={selected['x-component-props']?.titlePlacement || 'left'} onChange={(event) => patchSelectedProps({ titlePlacement: event.target.value })}>
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
+                    <option value="left">{t('left')}</option>
+                    <option value="center">{t('center')}</option>
+                    <option value="right">{t('right')}</option>
                   </select>
                 </label>
               </>
@@ -600,9 +601,9 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             {blockComponents.includes(selected['x-component']) && (
               <>
                 <label>
-                  Table
+                  {t('table')}
                   <select value={selected['x-component-props']?.tableId || ''} onChange={(event) => handleTableChange(event.target.value)}>
-                    <option value="">Select table</option>
+                    <option value="">{t('selectTable')}</option>
                     {tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
                   </select>
                 </label>
@@ -610,55 +611,55 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                 {selected['x-component'] === 'FormBlock' && (
                   <>
                     <label>
-                      Mode
+                      {t('mode')}
                       <select value={selected['x-component-props']?.mode || 'auto'} onChange={(event) => patchSelectedProps({ mode: event.target.value })}>
-                        <option value="auto">Auto</option>
-                        <option value="create">Create</option>
-                        <option value="edit">Edit</option>
+                        <option value="auto">{t('auto')}</option>
+                        <option value="create">{t('create')}</option>
+                        <option value="edit">{t('edit')}</option>
                       </select>
                     </label>
                     <label>
-                      Record ID
+                      {t('recordId')}
                       <input type="number" value={selected['x-component-props']?.recordId || ''} onChange={(event) => patchSelectedProps({ recordId: event.target.value ? Number(event.target.value) : null })} />
                     </label>
                     <label>
-                      Record ID URL param
+                      {t('recordIdParam')}
                       <input value={selected['x-component-props']?.recordIdParam || 'id'} onChange={(event) => patchSelectedProps({ recordIdParam: event.target.value })} />
                     </label>
                     <label>
-                      Submit label
-                      <input value={selected['x-component-props']?.submitLabel || 'Save'} onChange={(event) => patchSelectedProps({ submitLabel: event.target.value })} />
+                      {t('submitLabel')}
+                      <input value={selected['x-component-props']?.submitLabel || t('save')} onChange={(event) => patchSelectedProps({ submitLabel: event.target.value })} />
                     </label>
                     <label>
-                      After save
+                      {t('afterSave')}
                       <select value={selected['x-component-props']?.saveAction || 'none'} onChange={(event) => patchSelectedProps({ saveAction: event.target.value })}>
-                        <option value="none">Stay on page</option>
-                        <option value="navigate">Navigate to page</option>
-                        <option value="back">Navigate back</option>
+                        <option value="none">{t('stayOnPage')}</option>
+                        <option value="navigate">{t('navigateToPage')}</option>
+                        <option value="back">{t('navigateBack')}</option>
                       </select>
                     </label>
                     <label>
-                      Save target page
+                      {t('saveTargetPage')}
                       <select disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={selected['x-component-props']?.saveTargetPageId || ''} onChange={(event) => patchSelectedProps({ saveTargetPageId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                         {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Save navigation params JSON
+                      {t('saveNavigationParamsJson')}
                       <textarea rows="3" disabled={(selected['x-component-props']?.saveAction || 'none') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.saveNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('saveNavigationParams', event.target.value)} />
                     </label>
                     <label className="check-row">
                       <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.useFormGroup)} onChange={(event) => patchSelectedProps({ useFormGroup: event.target.checked })} />
-                      Use shared form group
+                      {t('useSharedFormGroup')}
                     </label>
                     <label>
-                      Form group key
+                      {t('formGroupKey')}
                       <input disabled={!selected['x-component-props']?.useFormGroup} value={selected['x-component-props']?.formGroupKey || ''} onChange={(event) => patchSelectedProps({ formGroupKey: event.target.value })} />
                     </label>
                     <label className="check-row">
                       <input className="custom-checkbox" type="checkbox" checked={selected['x-component-props']?.showGroupSubmit !== false} disabled={!selected['x-component-props']?.useFormGroup} onChange={(event) => patchSelectedProps({ showGroupSubmit: event.target.checked })} />
-                      Show group save button
+                      {t('showGroupSaveButton')}
                     </label>
                   </>
                 )}
@@ -666,78 +667,78 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                 {selected['x-component'] === 'TableBlock' && (
                   <>
                     <label>
-                      Page size
+                      {t('pageSize')}
                       <input type="number" min="1" value={selected['x-component-props']?.pageSize || 10} onChange={(event) => patchSelectedProps({ pageSize: Number(event.target.value) || 10 })} />
                     </label>
                     <label>
-                      Row click
+                      {t('rowClick')}
                       <select value={selected['x-component-props']?.rowClickAction || 'none'} onChange={(event) => patchSelectedProps({ rowClickAction: event.target.value })}>
-                        <option value="none">No navigation</option>
-                        <option value="navigate">Navigate to page</option>
+                        <option value="none">{t('noNavigation')}</option>
+                        <option value="navigate">{t('navigateToPage')}</option>
                       </select>
                     </label>
                     <label>
-                      Row target page
+                      {t('rowTargetPage')}
                       <select disabled={(selected['x-component-props']?.rowClickAction || 'none') !== 'navigate'} value={selected['x-component-props']?.rowTargetPageId || ''} onChange={(event) => patchSelectedProps({ rowTargetPageId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                         {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Row mode
+                      {t('rowMode')}
                       <select disabled={(selected['x-component-props']?.rowClickAction || 'none') !== 'navigate'} value={selected['x-component-props']?.rowMode || 'view'} onChange={(event) => patchSelectedProps({ rowMode: event.target.value })}>
-                        <option value="view">View</option>
-                        <option value="edit">Edit</option>
+                        <option value="view">{t('view')}</option>
+                        <option value="edit">{t('edit')}</option>
                       </select>
                     </label>
                     <label>
-                      Row query params JSON
+                      {t('rowQueryParamsJson')}
                       <textarea rows="3" disabled={(selected['x-component-props']?.rowClickAction || 'none') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.rowNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('rowNavigationParams', event.target.value)} />
                     </label>
                     <label>
-                      Create action
+                      {t('createAction')}
                       <select value={selected['x-component-props']?.createAction || 'modal'} onChange={(event) => patchSelectedProps({ createAction: event.target.value })}>
-                        <option value="modal">Open modal</option>
-                        <option value="navigate">Navigate to page</option>
+                        <option value="modal">{t('openModal')}</option>
+                        <option value="navigate">{t('navigateToPage')}</option>
                       </select>
                     </label>
                     <label>
-                      Create target page
+                      {t('createTargetPage')}
                       <select disabled={(selected['x-component-props']?.createAction || 'modal') !== 'navigate'} value={selected['x-component-props']?.createTargetPageId || ''} onChange={(event) => patchSelectedProps({ createTargetPageId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                         {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Create query params JSON
+                      {t('createQueryParamsJson')}
                       <textarea rows="3" disabled={(selected['x-component-props']?.createAction || 'modal') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.createNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('createNavigationParams', event.target.value)} />
                     </label>
                     <label>
-                      Edit action
+                      {t('editAction')}
                       <select value={selected['x-component-props']?.editAction || 'modal'} onChange={(event) => patchSelectedProps({ editAction: event.target.value })}>
-                        <option value="modal">Open modal</option>
-                        <option value="navigate">Navigate to page</option>
+                        <option value="modal">{t('openModal')}</option>
+                        <option value="navigate">{t('navigateToPage')}</option>
                       </select>
                     </label>
                     <label>
-                      Edit target page
+                      {t('editTargetPage')}
                       <select disabled={(selected['x-component-props']?.editAction || 'modal') !== 'navigate'} value={selected['x-component-props']?.editTargetPageId || ''} onChange={(event) => patchSelectedProps({ editTargetPageId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                         {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Edit query params JSON
+                      {t('editQueryParamsJson')}
                       <textarea rows="3" disabled={(selected['x-component-props']?.editAction || 'modal') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.editNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('editNavigationParams', event.target.value)} />
                     </label>
                   </>
                 )}
 
                 <div className="builder-config-group">
-                  <strong>{selected['x-component'] === 'FormBlock' ? 'Form fields from columns' : 'Table columns'}</strong>
+                  <strong>{selected['x-component'] === 'FormBlock' ? t('formFieldsFromColumns') : t('tableColumns')}</strong>
                   <div className="button-row compact">
-                    <button type="button" className="secondary" onClick={() => selectAllBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Select all</button>
-                    <button type="button" className="secondary" onClick={() => clearBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>Clear</button>
+                    <button type="button" className="secondary" onClick={() => selectAllBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>{t('selectAll')}</button>
+                    <button type="button" className="secondary" onClick={() => clearBlockColumns(selected['x-component'] === 'FormBlock' ? 'form' : 'table')}>{t('clear')}</button>
                   </div>
                   <div className="builder-column-list">
                     {getTableColumns(tableDetailsById, selected['x-component-props']?.tableId).map((column) => {
@@ -756,59 +757,59 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                               : toggleTableColumn(column.name, event.target.checked)}
                           />
                           <span>{column.name}</span>
-                          <small>{column.fieldType || 'text'}</small>
-                          {column.isRequired && <small className="text-danger">required</small>}
+                          <small>{column.fieldType || t('textType')}</small>
+                          {column.isRequired && <small className="text-danger">{t('required')}</small>}
                         </label>
                       )
                     })}
-                    {!selected['x-component-props']?.tableId && <p className="muted">Select a table to choose columns.</p>}
+                    {!selected['x-component-props']?.tableId && <p className="muted">{t('selectTableToChooseColumns')}</p>}
                   </div>
                 </div>
 
                 <div className="builder-config-group">
-                  <strong>CRUD permissions</strong>
+                  <strong>{t('crudPermissions')}</strong>
                   {selected['x-component'] !== 'DetailCard' && (
                     <label className="check-row">
                       <input className="custom-checkbox" type="checkbox" checked={selected['x-component-props']?.allowCreate !== false} onChange={(event) => patchSelectedProps({ allowCreate: event.target.checked })} />
-                      Allow create
+                      {t('allowCreate')}
                     </label>
                   )}
                   <label className="check-row">
                     <input className="custom-checkbox" type="checkbox" checked={selected['x-component-props']?.allowEdit !== false} onChange={(event) => patchSelectedProps({ allowEdit: event.target.checked })} />
-                    Allow edit
+                    {t('allowEdit')}
                   </label>
                   <label className="check-row">
                     <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.allowDelete)} onChange={(event) => patchSelectedProps({ allowDelete: event.target.checked })} />
-                    Allow delete
+                    {t('allowDelete')}
                   </label>
                 </div>
               </>
             )}
             {['Heading', 'Text', 'Button'].includes(selected['x-component']) && (
               <label>
-                Text
+                {t('text')}
                 <input value={selected['x-component-props']?.text || ''} onChange={(event) => patchSelectedProps({ text: event.target.value })} />
               </label>
             )}
             {selected['x-component'] === 'Button' && (
-              <div className="builder-config-group">
-                <strong>Navigation</strong>
+                <div className="builder-config-group">
+                  <strong>{t('navigation')}</strong>
                 <label>
-                  Action
+                  {t('action')}
                   <select value={selected['x-component-props']?.action || 'none'} onChange={(event) => patchSelectedProps({ action: event.target.value })}>
-                    <option value="none">None</option>
-                    <option value="navigate">Navigate to page</option>
+                    <option value="none">{t('none')}</option>
+                    <option value="navigate">{t('navigateToPage')}</option>
                   </select>
                 </label>
                 <label>
-                  Target page
+                  {t('targetPage')}
                   <select disabled={(selected['x-component-props']?.action || 'none') !== 'navigate'} value={selected['x-component-props']?.targetPageId || ''} onChange={(event) => patchSelectedProps({ targetPageId: event.target.value ? Number(event.target.value) : null })}>
-                    <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                     {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                   </select>
                 </label>
                 <label>
-                  Query params JSON
+                  {t('queryParamsJson')}
                   <textarea rows="3" disabled={(selected['x-component-props']?.action || 'none') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.navigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('navigationParams', event.target.value)} />
                 </label>
               </div>
@@ -816,30 +817,30 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             {fieldComponents.includes(selected['x-component']) && (
               <>
                 <label>
-                  Field name
+                  {t('fieldName')}
                   <input value={selected['x-field'] || selected.name || ''} onChange={(event) => patchSelected({ name: event.target.value, 'x-field': event.target.value })} />
                 </label>
                 {['Input', 'Textarea', 'Select', 'Reference'].includes(selected['x-component']) && (
                   <label>
-                    Placeholder
+                    {t('placeholder')}
                     <input value={selected['x-component-props']?.placeholder || ''} onChange={(event) => patchSelectedProps({ placeholder: event.target.value })} />
                   </label>
                 )}
                 {selected['x-component'] === 'Select' && (
                   <>
                     <div className="builder-config-group">
-                      <strong>Selection options</strong>
+                      <strong>{t('selectionOptions')}</strong>
                       <label>
-                        Mode
+                        {t('mode')}
                         <select value={selected['x-component-props']?.optionMode || 'static'} onChange={(event) => patchSelectedProps({ optionMode: event.target.value })}>
-                          <option value="static">Static options</option>
-                          <option value="dynamic">Dynamic options</option>
+                          <option value="static">{t('staticOptions')}</option>
+                          <option value="dynamic">{t('dynamicOptions')}</option>
                         </select>
                       </label>
                       {(selected['x-component-props']?.optionMode || 'static') === 'dynamic' && (
                         <>
                           <label>
-                            Source table
+                            {t('sourceTable')}
                             <select
                               value={selected['x-component-props']?.sourceTableId || ''}
                               onChange={(event) => patchSelectedProps({
@@ -849,39 +850,39 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                                 filterField: '',
                               })}
                             >
-                              <option value="">Select table</option>
+                              <option value="">{t('selectTable')}</option>
                               {tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
                             </select>
                           </label>
                           <label>
-                            Display column
+                            {t('displayColumn')}
                             <select disabled={!selected['x-component-props']?.sourceTableId} value={selected['x-component-props']?.displayColumn || 'id'} onChange={(event) => patchSelectedProps({ displayColumn: event.target.value })}>
                               {getColumnOptions(tableDetailsById[selected['x-component-props']?.sourceTableId]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                           </label>
                           <label>
-                            Value column
+                            {t('valueColumn')}
                             <select disabled={!selected['x-component-props']?.sourceTableId} value={selected['x-component-props']?.valueColumn || 'id'} onChange={(event) => patchSelectedProps({ valueColumn: event.target.value })}>
                               {getColumnOptions(tableDetailsById[selected['x-component-props']?.sourceTableId]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                           </label>
                           <label>
-                            Depends on field
+                            {t('dependsOnField')}
                             <select value={selected['x-component-props']?.dependsOnField || ''} onChange={(event) => patchSelectedProps({ dependsOnField: event.target.value, filterField: event.target.value ? selected['x-component-props']?.filterField || '' : '' })}>
-                              <option value="">No dependency</option>
+                              <option value="">{t('noDependency')}</option>
                               {fieldOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                           </label>
                           <label>
-                            Filter field
+                            {t('filterField')}
                             <select disabled={!selected['x-component-props']?.sourceTableId || !selected['x-component-props']?.dependsOnField} value={selected['x-component-props']?.filterField || ''} onChange={(event) => patchSelectedProps({ filterField: event.target.value })}>
-                              <option value="">Select field</option>
+                              <option value="">{t('selectField')}</option>
                               {getColumnOptions(tableDetailsById[selected['x-component-props']?.sourceTableId]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                           </label>
                           <label>
-                            Empty parent placeholder
-                            <input value={selected['x-component-props']?.emptyDependencyPlaceholder || ''} placeholder="Select a parent value first" onChange={(event) => patchSelectedProps({ emptyDependencyPlaceholder: event.target.value })} />
+                            {t('emptyParentPlaceholder')}
+                            <input value={selected['x-component-props']?.emptyDependencyPlaceholder || ''} placeholder={t('selectParentValueFirst')} onChange={(event) => patchSelectedProps({ emptyDependencyPlaceholder: event.target.value })} />
                           </label>
                         </>
                       )}
@@ -891,77 +892,77 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                 {selected['x-component'] === 'Reference' && (
                   <>
                     <label>
-                      Target table
+                      {t('targetTable')}
                       <select value={selected['x-component-props']?.targetTableId || ''} onChange={(event) => patchSelectedProps({
                         targetTableId: event.target.value ? Number(event.target.value) : null,
                         parentFieldName: selected['x-component-props']?.parentFieldName || selected['x-field'] || '',
                       })}>
-                        <option value="">Select table</option>
+                              <option value="">{t('selectTable')}</option>
                         {tables.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Display column
+                      {t('displayColumn')}
                       <select value={selected['x-component-props']?.displayColumnId || 'id'} onChange={(event) => patchSelectedProps({ displayColumnId: event.target.value })}>
-                        <option value="id">Record ID</option>
+                        <option value="id">{t('recordId')}</option>
                         {getTableColumns(tableDetailsById, selected['x-component-props']?.targetTableId).map((column) => <option key={column.id} value={column.name}>{column.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Relationship mode
+                      {t('relationshipMode')}
                       <select value={selected['x-component-props']?.relationshipMode || 'lookup'} onChange={(event) => patchSelectedProps({ relationshipMode: event.target.value })}>
-                        <option value="lookup">Lookup mode</option>
-                        <option value="related">Related record mode</option>
+                        <option value="lookup">{t('lookupMode')}</option>
+                        <option value="related">{t('relatedRecordMode')}</option>
                       </select>
                     </label>
                     {selected['x-component-props']?.relationshipMode === 'related' && (
                       <label>
-                        Parent link field on target table
+                        {t('parentLinkFieldOnTargetTable')}
                         <input value={selected['x-component-props']?.parentFieldName || ''} onChange={(event) => patchSelectedProps({ parentFieldName: event.target.value })} />
                       </label>
                     )}
                     <label>
-                      Picker variant
+                      {t('pickerVariant')}
                       <select value={selected['x-component-props']?.pickerVariant || 'table'} onChange={(event) => patchSelectedProps({ pickerVariant: event.target.value })}>
-                        <option value="table">Table picker</option>
-                        <option value="select">Select picker</option>
+                        <option value="table">{t('tablePicker')}</option>
+                        <option value="select">{t('selectPicker')}</option>
                       </select>
                     </label>
                     <label>
-                      Add record action
+                      {t('addRecordAction')}
                       <select value={selected['x-component-props']?.referenceCreateAction || 'modal'} onChange={(event) => patchSelectedProps({ referenceCreateAction: event.target.value })}>
-                        <option value="modal">Open modal</option>
-                        <option value="navigate">Navigate to page</option>
+                        <option value="modal">{t('openModal')}</option>
+                        <option value="navigate">{t('navigateToPage')}</option>
                       </select>
                     </label>
                     <label>
-                      Add record target page
+                      {t('addRecordTargetPage')}
                       <select disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={selected['x-component-props']?.referenceCreateTargetPageId || ''} onChange={(event) => patchSelectedProps({ referenceCreateTargetPageId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">Select page</option>
+                        <option value="">{t('selectPage')}</option>
                         {pages.map((pageOption) => <option key={pageOption.id} value={pageOption.id}>{pageOption.name}</option>)}
                       </select>
                     </label>
                     <label>
-                      Add record query params JSON
+                      {t('addRecordQueryParamsJson')}
                       <textarea rows="3" disabled={(selected['x-component-props']?.referenceCreateAction || 'modal') !== 'navigate'} value={JSON.stringify(selected['x-component-props']?.referenceCreateNavigationParams || {}, null, 2)} onChange={(event) => patchJsonProp('referenceCreateNavigationParams', event.target.value)} />
                     </label>
                   </>
                 )}
                 <label className="check-row">
                   <input className="custom-checkbox" type="checkbox" checked={Boolean(selected.required)} onChange={(event) => patchSelected({ required: event.target.checked })} />
-                  Required
+                  {t('required')}
                 </label>
                 <label className="check-row">
                   <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.disabled)} onChange={(event) => patchSelectedProps({ disabled: event.target.checked })} />
-                  Disabled
+                  {t('disabled')}
                 </label>
                 <label className="check-row">
                   <input className="custom-checkbox" type="checkbox" checked={Boolean(selected['x-component-props']?.hiddenInForms)} onChange={(event) => patchSelectedProps({ hiddenInForms: event.target.checked })} />
-                  Hidden in forms
+                  {t('hiddenInForms')}
                 </label>
                 {['Input', 'Input.TextArea', 'Textarea'].includes(selected['x-component']) && (
                   <div className="builder-config-group">
-                    <strong>Value generator</strong>
+                    <strong>{t('valueGenerator')}</strong>
                     <label className="check-row">
                       <input
                         className="custom-checkbox"
@@ -972,10 +973,10 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                           valueGeneratorEditable: selected['x-component-props']?.valueGeneratorEditable ?? true,
                         })}
                       />
-                      Generate value
+                      {t('generateValue')}
                     </label>
                     <label>
-                      Template
+                      {t('template')}
                       <textarea
                         rows="3"
                         disabled={!selected['x-component-props']?.valueGeneratorEnabled}
@@ -992,14 +993,14 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                         checked={selected['x-component-props']?.valueGeneratorEditable !== false}
                         onChange={(event) => patchSelectedProps({ valueGeneratorEditable: event.target.checked })}
                       />
-                      Allow manual edits
+                      {t('allowManualEdits')}
                     </label>
                   </div>
                 )}
                 <div className="builder-config-group">
-                  <strong>Visibility</strong>
+                  <strong>{t('visibility')}</strong>
                   <label>
-                    Visible when field
+                    {t('visibleWhenField')}
                     <select
                       value={selected['x-component-props']?.visibleWhen?.field || ''}
                       onChange={(event) => patchSelectedProps({
@@ -1009,12 +1010,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                         },
                       })}
                     >
-                      <option value="">Always visible</option>
+                      <option value="">{t('alwaysVisible')}</option>
                       {fieldOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
                   <label>
-                    Operator
+                    {t('operator')}
                     <select
                       value={selected['x-component-props']?.visibleWhen?.operator || '='}
                       disabled={!selected['x-component-props']?.visibleWhen?.field}
@@ -1025,17 +1026,17 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
                         },
                       })}
                     >
-                      <option value="=">Equals</option>
-                      <option value="!=">Not equals</option>
-                      <option value="contains">Contains</option>
+                      <option value="=">{t('equals')}</option>
+                      <option value="!=">{t('notEquals')}</option>
+                      <option value="contains">{t('contains')}</option>
                     </select>
                   </label>
                   <label>
-                    Value
-                    <input
+                    {t('value')}
+                      <input
                       value={selected['x-component-props']?.visibleWhen?.value || ''}
                       disabled={!selected['x-component-props']?.visibleWhen?.field}
-                      placeholder="Match value"
+                      placeholder={t('matchValue')}
                       onChange={(event) => patchSelectedProps({
                         visibleWhen: {
                           ...(selected['x-component-props']?.visibleWhen || {}),
@@ -1049,7 +1050,7 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
             )}
             {selected['x-component'] === 'Select' && (selected['x-component-props']?.optionMode || 'static') === 'static' && (
               <label>
-                Options, one per line
+                {t('optionsOnePerLine')}
                 <textarea
                   rows="5"
                   value={selectOptionsText}
