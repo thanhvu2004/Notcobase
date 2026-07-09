@@ -200,11 +200,52 @@ label {
   font-size: 0.78rem;
 }
 
+.ai-chat-header-actions {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem !important;
+}
+
+.ai-chat-header-actions button {
+  height: 2rem;
+  padding: 0 0.65rem;
+  white-space: nowrap;
+}
+
 .ai-chat-close {
   width: 2rem;
   min-width: 2rem;
   height: 2rem;
   padding: 0;
+}
+
+.ai-chat-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 0.75rem;
+  min-height: 10rem;
+  z-index: 5;
+}
+
+.ai-chat-settings label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.ai-chat-settings label:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.ai-chat-settings input,
+.ai-chat-settings select {
+  height: 2.1rem;
+  min-width: 0;
+  font-size: 0.84rem;
 }
 
 .ai-chat-messages {
@@ -304,6 +345,10 @@ label {
   .ai-chat-panel {
     width: calc(100vw - 1.5rem);
     height: min(560px, calc(100vh - 5.5rem));
+  }
+
+  .ai-chat-settings {
+    grid-template-columns: 1fr;
   }
 }
 

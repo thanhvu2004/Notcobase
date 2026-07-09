@@ -7,21 +7,64 @@ const copyByLanguage = {
     subtitle: 'Local Ollama assistant',
     close: 'Close AI chat',
     open: 'Open AI chat',
+    settings: 'Settings',
+    provider: 'Provider',
+    model: 'Model',
+    providerUrl: 'Provider URL',
+    apiKey: 'API key',
+    apiKeyPlaceholder: 'Required for API-key providers',
+    ollamaProvider: 'Ollama (local)',
+    openAiCompatibleProvider: 'OpenAI-compatible API',
+    geminiProvider: 'Gemini API',
     placeholder: 'Ask how to use Notcobase...',
     send: 'Send',
     thinking: 'Thinking...',
-    unavailable: 'I could not reach the local AI service. Make sure `python ai/index.py` is running and Ollama has the selected model available.',
+    unavailable: 'I could not reach the local AI service.',
     welcome: 'Hi, I can help with Notcobase tables, users, permissions, pages, and the UI editor.',
   },
   vi: {
     subtitle: 'Trợ lý Ollama cục bộ',
     close: 'Đóng chat AI',
     open: 'Mở chat AI',
+    settings: 'Cài đặt',
+    provider: 'Nhà cung cấp',
+    model: 'Model',
+    providerUrl: 'URL nhà cung cấp',
+    apiKey: 'API key',
+    apiKeyPlaceholder: 'Bắt buộc với nhà cung cấp dùng API key',
+    ollamaProvider: 'Ollama (cục bộ)',
+    openAiCompatibleProvider: 'API tương thích OpenAI',
+    geminiProvider: 'Gemini API',
     placeholder: 'Hỏi cách sử dụng Notcobase...',
     send: 'Gửi',
     thinking: 'Đang suy nghĩ...',
-    unavailable: 'Tôi không kết nối được dịch vụ AI cục bộ. Hãy kiểm tra `python ai/index.py` đang chạy và Ollama đã có model được chọn.',
+    unavailable: 'Tôi không kết nối được dịch vụ AI cục bộ.',
     welcome: 'Xin chào, tôi có thể hỗ trợ về bảng, người dùng, quyền, trang và trình chỉnh sửa giao diện của Notcobase.',
+  },
+}
+
+const AI_PROVIDER_STORAGE_KEY = 'notcobase:ai-provider-config'
+
+const defaultProviderConfig = {
+  provider: 'ollama',
+  model: 'llama3.1:8b',
+  baseUrl: 'http://127.0.0.1:11434',
+  apiKey: '',
+}
+
+const providerDefaults = {
+  ollama: defaultProviderConfig,
+  'openai-compatible': {
+    provider: 'openai-compatible',
+    model: 'gpt-4o-mini',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+  },
+  gemini: {
+    provider: 'gemini',
+    model: 'gemini-2.0-flash',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    apiKey: '',
   },
 }
 
@@ -41,10 +84,21 @@ function createWelcomeMessage(language) {
   }
 }
 
+function loadProviderConfig() {
+  try {
+    const stored = localStorage.getItem(AI_PROVIDER_STORAGE_KEY)
+    return stored ? { ...defaultProviderConfig, ...JSON.parse(stored) } : defaultProviderConfig
+  } catch {
+    return defaultProviderConfig
+  }
+}
+
 export default function AiChatBot() {
   const language = getChatLanguage()
   const copy = getCopy(language)
   const [open, setOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [providerConfig, setProviderConfig] = useState(loadProviderConfig)
   const [messages, setMessages] = useState(() => [createWelcomeMessage(language)])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -57,6 +111,26 @@ export default function AiChatBot() {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     })
   }, [messages, open])
+
+  useEffect(() => {
+    localStorage.setItem(AI_PROVIDER_STORAGE_KEY, JSON.stringify(providerConfig))
+  }, [providerConfig])
+
+  function patchProviderConfig(patch) {
+    setProviderConfig((current) => {
+      const next = { ...current, ...patch }
+      if (patch.provider === 'ollama') {
+        return { ...providerDefaults.ollama }
+      }
+      if (patch.provider === 'openai-compatible') {
+        return { ...providerDefaults['openai-compatible'], apiKey: current.apiKey || '' }
+      }
+      if (patch.provider === 'gemini') {
+        return { ...providerDefaults.gemini, apiKey: current.apiKey || '' }
+      }
+      return next
+    })
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -74,6 +148,7 @@ export default function AiChatBot() {
         text,
         nextMessages.filter((message) => !message.welcome),
         language,
+        providerConfig,
       )
       setMessages((current) => [
         ...current,
@@ -104,12 +179,49 @@ export default function AiChatBot() {
           <header className="ai-chat-header">
             <div>
               <strong>Notcobase AI</strong>
-              <span>{copy.subtitle}</span>
+              <span>{copy.subtitle} · {providerConfig.model}</span>
             </div>
-            <button type="button" className="secondary ai-chat-close" onClick={() => setOpen(false)} aria-label={copy.close}>
-              x
-            </button>
+            <div className="ai-chat-header-actions">
+              <button type="button" className="secondary" onClick={() => setSettingsOpen((current) => !current)}>
+                {copy.settings}
+              </button>
+              <button type="button" className="secondary ai-chat-close" onClick={() => setOpen(false)} aria-label={copy.close}>
+                x
+              </button>
+            </div>
           </header>
+
+          {settingsOpen && (
+            <section className="ai-chat-settings">
+              <label>
+                {copy.provider}
+                <select value={providerConfig.provider} onChange={(event) => patchProviderConfig({ provider: event.target.value })}>
+                  <option value="ollama">{copy.ollamaProvider}</option>
+                  <option value="openai-compatible">{copy.openAiCompatibleProvider}</option>
+                  <option value="gemini">{copy.geminiProvider}</option>
+                </select>
+              </label>
+              <label>
+                {copy.model}
+                <input value={providerConfig.model} onChange={(event) => patchProviderConfig({ model: event.target.value })} />
+              </label>
+              <label>
+                {copy.providerUrl}
+                <input value={providerConfig.baseUrl} onChange={(event) => patchProviderConfig({ baseUrl: event.target.value })} />
+              </label>
+              {providerConfig.provider !== 'ollama' && (
+                <label>
+                  {copy.apiKey}
+                  <input
+                    type="password"
+                    value={providerConfig.apiKey}
+                    placeholder={copy.apiKeyPlaceholder}
+                    onChange={(event) => patchProviderConfig({ apiKey: event.target.value })}
+                  />
+                </label>
+              )}
+            </section>
+          )}
 
           <div ref={scrollRef} className="ai-chat-messages">
             {messages.map((message, index) => (

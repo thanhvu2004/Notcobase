@@ -14,6 +14,9 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_OPENAI_COMPATIBLE_URL = "https://api.openai.com/v1"
+DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 
 def load_documents():
@@ -123,6 +126,142 @@ def ollama_chat(messages, model, ollama_url):
     return content
 
 
+def openai_compatible_chat(messages, model, base_url, api_key):
+    if not api_key:
+        raise RuntimeError("API key is required for OpenAI-compatible providers.")
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+    }
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"AI provider returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Cannot reach the configured AI provider. Check the provider URL, network, and API key."
+        ) from exc
+
+    content = data.get("choices", [{}])[0].get("message", {}).get("content")
+    if not content:
+        raise RuntimeError("AI provider returned an empty response.")
+    return content
+
+
+def gemini_chat(messages, model, base_url, api_key):
+    if not api_key:
+        raise RuntimeError("Gemini API key is required.")
+
+    system_text = "\n\n".join(
+        message["content"]
+        for message in messages
+        if message.get("role") == "system" and message.get("content")
+    )
+    contents = []
+    for message in messages:
+        role = message.get("role")
+        content = message.get("content")
+        if role == "system" or not content:
+            continue
+        contents.append({
+            "role": "model" if role == "assistant" else "user",
+            "parts": [{"text": content}],
+        })
+
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.2,
+        },
+    }
+    if system_text:
+        payload["systemInstruction"] = {
+            "parts": [{"text": system_text}],
+        }
+
+    model_name = model if model.startswith("models/") else f"models/{model}"
+    url = f"{base_url.rstrip('/')}/{model_name}:generateContent?key={api_key}"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Cannot reach Gemini. Check the Gemini API URL, network, and API key."
+        ) from exc
+
+    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    content = "\n".join(part.get("text", "") for part in parts).strip()
+    if not content:
+        raise RuntimeError("Gemini returned an empty response.")
+    return content
+
+
+def normalize_provider(value):
+    lowered = str(value or "").lower()
+    return lowered if lowered in {"ollama", "openai-compatible", "gemini"} else "ollama"
+
+
+def build_provider_config(body, default_model, default_ollama_url):
+    provider_config = body.get("providerConfig")
+    if not isinstance(provider_config, dict):
+        provider_config = {}
+
+    provider = normalize_provider(provider_config.get("provider"))
+    if provider == "openai-compatible":
+        return {
+            "provider": provider,
+            "model": str(provider_config.get("model") or default_model).strip() or default_model,
+            "base_url": str(provider_config.get("baseUrl") or DEFAULT_OPENAI_COMPATIBLE_URL).strip() or DEFAULT_OPENAI_COMPATIBLE_URL,
+            "api_key": str(provider_config.get("apiKey") or "").strip(),
+        }
+    if provider == "gemini":
+        return {
+            "provider": provider,
+            "model": str(provider_config.get("model") or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL,
+            "base_url": str(provider_config.get("baseUrl") or DEFAULT_GEMINI_URL).strip() or DEFAULT_GEMINI_URL,
+            "api_key": str(provider_config.get("apiKey") or "").strip(),
+        }
+
+    return {
+        "provider": "ollama",
+        "model": str(provider_config.get("model") or default_model).strip() or default_model,
+        "base_url": str(provider_config.get("baseUrl") or default_ollama_url).strip() or default_ollama_url,
+        "api_key": "",
+    }
+
+
+def run_provider_chat(messages, config):
+    if config["provider"] == "openai-compatible":
+        return openai_compatible_chat(messages, config["model"], config["base_url"], config["api_key"])
+    if config["provider"] == "gemini":
+        return gemini_chat(messages, config["model"], config["base_url"], config["api_key"])
+    return ollama_chat(messages, config["model"], config["base_url"])
+
+
 def build_messages(question, history, context_chunks, language):
     context = "\n\n".join(
         f"Source: {chunk['source']} > {chunk['heading']}\n{chunk['text']}"
@@ -162,7 +301,14 @@ class ChatHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json({"ok": True, "model": self.model, "documents": len(self.documents)})
+            self.send_json({
+                "ok": True,
+                "defaultProvider": "ollama",
+                "model": self.model,
+                "ollamaUrl": self.ollama_url,
+                "documents": len(self.documents),
+                "providers": ["ollama", "openai-compatible", "gemini"],
+            })
             return
         self.send_error(404, "Not found")
 
@@ -176,16 +322,19 @@ class ChatHandler(BaseHTTPRequestHandler):
             question = str(body.get("message", "")).strip()
             history = body.get("history", [])
             language = normalize_language(body.get("language"))
+            provider_config = build_provider_config(body, self.model, self.ollama_url)
             if not question:
                 self.send_json({"error": "Message is required."}, status=400)
                 return
 
             context_chunks = retrieve_context(self.documents, question, language)
             messages = build_messages(question, history if isinstance(history, list) else [], context_chunks, language)
-            answer = ollama_chat(messages, self.model, self.ollama_url)
+            answer = run_provider_chat(messages, provider_config)
             self.send_json({
                 "answer": answer,
                 "language": language,
+                "provider": provider_config["provider"],
+                "model": provider_config["model"],
                 "sources": [
                     {"source": chunk["source"], "heading": chunk["heading"]}
                     for chunk in context_chunks

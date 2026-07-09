@@ -1,12 +1,12 @@
 const DEFAULT_AI_CHAT_URL = 'http://127.0.0.1:8765/chat'
 
-export async function sendAiChatMessage(message, history = [], language = 'en') {
+export async function sendAiChatMessage(message, history = [], language = 'en', providerConfig = null) {
   const response = await fetch(import.meta.env.VITE_AI_CHAT_URL || DEFAULT_AI_CHAT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message, history, language }),
+    body: JSON.stringify({ message, history, language, providerConfig }),
   })
 
   const payload = await response.json().catch(() => ({}))
