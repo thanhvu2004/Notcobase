@@ -4,6 +4,7 @@ import PageBuilder from './features/pages/PageBuilder'
 import { createDefaultPageSchema, createPage, fetchPages, movePageToSection } from './features/pages/pagesApi'
 import TablesApp from './features/tables/TablesApp'
 import UsersApp from './features/users/UsersApp'
+import AiChatBot from './features/ai/AiChatBot'
 import { createPermissionChecker } from './features/auth/permissions'
 import { t, setLanguage, getLanguage } from './shared/locale'
 import './App.css'
@@ -651,6 +652,7 @@ export default function App() {
           </section>
         </main>
       )}
+      <AiChatBot />
     </div>
   )
 }
