@@ -1,5 +1,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -16,10 +19,19 @@ public class AiChatService
     private const string DefaultOpenAiCompatibleUrl = "https://api.openai.com/v1";
     private const string DefaultGeminiUrl = "https://generativelanguage.googleapis.com/v1beta";
     private const string DefaultGeminiModel = "gemini-2.0-flash";
+    private static readonly HashSet<string> SupportedToolNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "create_table",
+        "create_column",
+        "create_page",
+        "add_component_to_page",
+        "configure_page_component"
+    };
 
     private readonly AppDbContext _context;
     private readonly HttpClient _httpClient;
     private readonly IWebHostEnvironment _environment;
+    private readonly AiAppToolService _toolService;
     private readonly ILogger<AiChatService> _logger;
     private IReadOnlyList<DocumentationChunk>? _documents;
 
@@ -27,11 +39,13 @@ public class AiChatService
         AppDbContext context,
         HttpClient httpClient,
         IWebHostEnvironment environment,
+        AiAppToolService toolService,
         ILogger<AiChatService> logger)
     {
         _context = context;
         _httpClient = httpClient;
         _environment = environment;
+        _toolService = toolService;
         _logger = logger;
     }
 
@@ -68,7 +82,7 @@ public class AiChatService
         return settings;
     }
 
-    public async Task<AiChatResult> ChatAsync(AiChatRequest request)
+    public async Task<AiChatResult> ChatAsync(AiChatRequest request, ClaimsPrincipal user)
     {
         var question = (request.Message ?? "").Trim();
         if (string.IsNullOrWhiteSpace(question))
@@ -80,39 +94,90 @@ public class AiChatService
         var settings = await GetOrCreateSettingsAsync();
         var contextChunks = RetrieveContext(LoadDocuments(), question, language);
         var messages = BuildMessages(question, request.History ?? new List<AiChatMessage>(), contextChunks, language);
-        var answer = await RunProviderChatAsync(messages, settings);
+        var tools = ShouldOfferTools(question)
+            ? _toolService.GetToolDefinitions(user)
+            : Array.Empty<object>();
+        var chatResponse = await RunProviderChatAsync(messages, settings, tools);
+        var toolExecutions = new List<AiToolExecution>();
+
+        if (chatResponse.ToolCalls.Count == 0 && tools.Count > 0)
+        {
+            chatResponse.ToolCalls = ParseToolCallsFromText(chatResponse.Content ?? "");
+        }
+
+        if (chatResponse.ToolCalls.Count > 0)
+        {
+            messages.Add(new ProviderMessage("assistant", chatResponse.Content ?? "")
+            {
+                ToolCalls = chatResponse.ToolCalls
+            });
+
+            var createdPageIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var toolCall in chatResponse.ToolCalls.Take(6))
+            {
+                var arguments = toolCall.Function.Name.Equals("add_component_to_page", StringComparison.OrdinalIgnoreCase)
+                    ? ResolveNewPageReference(toolCall.Function.Arguments, createdPageIdsByName)
+                    : toolCall.Function.Arguments;
+                var execution = await _toolService.ExecuteAsync(
+                    toolCall.Function.Name,
+                    arguments,
+                    user);
+                toolExecutions.Add(execution);
+                TrackCreatedPage(execution, createdPageIdsByName);
+                messages.Add(ProviderMessage.ToolResult(
+                    toolCall.Id,
+                    JsonSerializer.Serialize(execution)));
+            }
+
+            chatResponse = chatResponse.ToolCalls.Any(call => string.IsNullOrWhiteSpace(call.Id) || call.Id.StartsWith("text_call_", StringComparison.Ordinal))
+                ? new ProviderChatResponse(BuildFallbackToolAnswer(toolExecutions), new List<ProviderToolCall>())
+                : await RunProviderChatAsync(messages, settings, tools);
+        }
 
         return new AiChatResult
         {
-            Answer = answer,
+            Answer = string.IsNullOrWhiteSpace(chatResponse.Content)
+                ? BuildFallbackToolAnswer(toolExecutions)
+                : chatResponse.Content,
             Language = language,
             Provider = settings.Provider,
             Model = settings.Model,
+            Tools = toolExecutions,
             Sources = contextChunks
                 .Select(chunk => new AiChatSource { Source = chunk.Source, Heading = chunk.Heading })
                 .ToList()
         };
     }
 
-    private async Task<string> RunProviderChatAsync(List<ProviderMessage> messages, AiSettings settings)
+    private async Task<ProviderChatResponse> RunProviderChatAsync(
+        List<ProviderMessage> messages,
+        AiSettings settings,
+        IReadOnlyList<object> tools)
     {
         return settings.Provider switch
         {
-            "openai-compatible" => await OpenAiCompatibleChatAsync(messages, settings),
+            "openai-compatible" => await OpenAiCompatibleChatAsync(messages, settings, tools),
             "gemini" => await GeminiChatAsync(messages, settings),
-            _ => await OllamaChatAsync(messages, settings)
+            _ => await OllamaChatAsync(messages, settings, tools)
         };
     }
 
-    private async Task<string> OllamaChatAsync(List<ProviderMessage> messages, AiSettings settings)
+    private async Task<ProviderChatResponse> OllamaChatAsync(
+        List<ProviderMessage> messages,
+        AiSettings settings,
+        IReadOnlyList<object> tools)
     {
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            model = settings.Model,
-            messages,
-            stream = false,
-            options = new { temperature = 0.2 }
+            ["model"] = settings.Model,
+            ["messages"] = BuildOllamaMessages(messages),
+            ["stream"] = false,
+            ["options"] = new { temperature = 0.2 }
         };
+        if (tools.Count > 0)
+        {
+            payload["tools"] = tools;
+        }
 
         using var response = await _httpClient.PostAsJsonAsync($"{settings.BaseUrl.TrimEnd('/')}/api/chat", payload);
         var body = await response.Content.ReadAsStringAsync();
@@ -122,28 +187,40 @@ public class AiChatService
         }
 
         using var document = JsonDocument.Parse(body);
-        var content = document.RootElement.GetProperty("message").GetProperty("content").GetString();
-        if (string.IsNullOrWhiteSpace(content))
+        var message = document.RootElement.GetProperty("message");
+        var content = message.TryGetProperty("content", out var contentElement)
+            ? contentElement.GetString()
+            : "";
+        var toolCalls = ParseToolCalls(message);
+        if (string.IsNullOrWhiteSpace(content) && toolCalls.Count == 0)
         {
             throw new InvalidOperationException("Ollama returned an empty response.");
         }
 
-        return content;
+        return new ProviderChatResponse(content ?? "", toolCalls);
     }
 
-    private async Task<string> OpenAiCompatibleChatAsync(List<ProviderMessage> messages, AiSettings settings)
+    private async Task<ProviderChatResponse> OpenAiCompatibleChatAsync(
+        List<ProviderMessage> messages,
+        AiSettings settings,
+        IReadOnlyList<object> tools)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey))
         {
             throw new InvalidOperationException("API key is required for OpenAI-compatible providers.");
         }
 
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            model = settings.Model,
-            messages,
-            temperature = 0.2
+            ["model"] = settings.Model,
+            ["messages"] = messages,
+            ["temperature"] = 0.2
         };
+        if (tools.Count > 0)
+        {
+            payload["tools"] = tools;
+            payload["tool_choice"] = "auto";
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{settings.BaseUrl.TrimEnd('/')}/chat/completions")
         {
@@ -159,21 +236,23 @@ public class AiChatService
         }
 
         using var document = JsonDocument.Parse(body);
-        var content = document.RootElement
+        var message = document.RootElement
             .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+            .GetProperty("message");
+        var content = message.TryGetProperty("content", out var contentElement)
+            ? contentElement.GetString()
+            : "";
+        var toolCalls = ParseToolCalls(message);
 
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) && toolCalls.Count == 0)
         {
             throw new InvalidOperationException("AI provider returned an empty response.");
         }
 
-        return content;
+        return new ProviderChatResponse(content ?? "", toolCalls);
     }
 
-    private async Task<string> GeminiChatAsync(List<ProviderMessage> messages, AiSettings settings)
+    private async Task<ProviderChatResponse> GeminiChatAsync(List<ProviderMessage> messages, AiSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -229,7 +308,7 @@ public class AiChatService
             throw new InvalidOperationException("Gemini returned an empty response.");
         }
 
-        return content;
+        return new ProviderChatResponse(content, new List<ProviderToolCall>());
     }
 
     private IReadOnlyList<DocumentationChunk> LoadDocuments()
@@ -346,6 +425,11 @@ public class AiChatService
             "You are the Notcobase support assistant. Help users use the product: " +
             "tables, fields, records, users, roles, permissions, custom pages, and the UI editor. " +
             "Answer with concise, practical steps. Mention required permissions when relevant. " +
+            "When the user asks you to create or configure tables, fields, pages, or page components, use the available tools. " +
+            "Never print JSON function calls for the user to run, never explain that you will use a function, and never include comments inside function JSON; call the available tools directly. " +
+            "For page component requests, use the page name or slug provided by the user as pageName; do not ask for a page ID when a page name was given. " +
+            "When the user asks to set a FormBlock or TableBlock to use a table by name, call configure_page_component with targetComponent and tableName. " +
+            "Only call tools when the request is explicit enough to act. If a required ID or name is missing, ask a concise follow-up question. " +
             $"Always answer in {responseLanguage}. " +
             "Use the retrieved documentation as your source of truth. If the docs do not cover the " +
             "question, say what you can infer and ask for more details.\n\n" +
@@ -358,6 +442,356 @@ public class AiChatService
             .Select(item => new ProviderMessage(item.Role, item.Content.Trim())));
         messages.Add(new ProviderMessage("user", question));
         return messages;
+    }
+
+    private static List<ProviderToolCall> ParseToolCalls(JsonElement message)
+    {
+        if (!message.TryGetProperty("tool_calls", out var toolCallsElement) ||
+            toolCallsElement.ValueKind != JsonValueKind.Array)
+        {
+            return new List<ProviderToolCall>();
+        }
+
+        var calls = new List<ProviderToolCall>();
+        var index = 0;
+        foreach (var callElement in toolCallsElement.EnumerateArray())
+        {
+            if (!callElement.TryGetProperty("function", out var functionElement))
+                continue;
+
+            var id = callElement.TryGetProperty("id", out var idElement)
+                ? idElement.GetString()
+                : $"call_{index}";
+            var name = functionElement.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            var arguments = "{}";
+            if (functionElement.TryGetProperty("arguments", out var argumentsElement))
+            {
+                arguments = argumentsElement.ValueKind == JsonValueKind.String
+                    ? argumentsElement.GetString() ?? "{}"
+                    : argumentsElement.GetRawText();
+            }
+
+            calls.Add(new ProviderToolCall
+            {
+                Id = string.IsNullOrWhiteSpace(id) ? $"call_{index}" : id!,
+                Type = "function",
+                Function = new ProviderToolFunction
+                {
+                    Name = name,
+                    Arguments = arguments
+                }
+            });
+            index++;
+        }
+
+        return calls;
+    }
+
+    private static List<ProviderToolCall> ParseToolCallsFromText(string content)
+    {
+        var calls = new List<ProviderToolCall>();
+        var index = 0;
+
+        foreach (var json in ExtractJsonObjects(content))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(RemoveJsonComments(json));
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("name", out var nameElement))
+                {
+                    continue;
+                }
+
+                var name = nameElement.GetString();
+                if (string.IsNullOrWhiteSpace(name) || !SupportedToolNames.Contains(name))
+                {
+                    continue;
+                }
+
+                var arguments = "{}";
+                if (root.TryGetProperty("parameters", out var parametersElement) &&
+                    parametersElement.ValueKind == JsonValueKind.Object)
+                {
+                    arguments = parametersElement.GetRawText();
+                }
+                else if (root.TryGetProperty("arguments", out var argumentsElement))
+                {
+                    arguments = argumentsElement.ValueKind == JsonValueKind.String
+                        ? argumentsElement.GetString() ?? "{}"
+                        : argumentsElement.GetRawText();
+                }
+
+                calls.Add(new ProviderToolCall
+                {
+                    Id = $"text_call_{index}",
+                    Type = "function",
+                    Function = new ProviderToolFunction
+                    {
+                        Name = name,
+                        Arguments = arguments
+                    }
+                });
+                index++;
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+        }
+
+        return calls;
+    }
+
+    private static void TrackCreatedPage(AiToolExecution execution, IDictionary<string, int> createdPageIdsByName)
+    {
+        if (!execution.Success ||
+            !execution.ToolName.Equals("create_page", StringComparison.OrdinalIgnoreCase) ||
+            execution.Data == null)
+        {
+            return;
+        }
+
+        var dataJson = JsonSerializer.Serialize(execution.Data);
+        using var document = JsonDocument.Parse(dataJson);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("Name", out var nameElement) ||
+            !root.TryGetProperty("Id", out var idElement))
+        {
+            return;
+        }
+
+        var name = nameElement.GetString();
+        if (!string.IsNullOrWhiteSpace(name) && idElement.TryGetInt32(out var id))
+        {
+            createdPageIdsByName[name] = id;
+        }
+    }
+
+    private static string ResolveNewPageReference(string arguments, IReadOnlyDictionary<string, int> createdPageIdsByName)
+    {
+        if (createdPageIdsByName.Count == 0 || string.IsNullOrWhiteSpace(arguments))
+        {
+            return arguments;
+        }
+
+        try
+        {
+            var args = JsonNode.Parse(arguments)?.AsObject();
+            if (args == null || args["pageId"] != null)
+            {
+                return arguments;
+            }
+
+            var pageName = args["pageName"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(pageName) ||
+                !createdPageIdsByName.TryGetValue(pageName, out var pageId))
+            {
+                return arguments;
+            }
+
+            args["pageId"] = pageId;
+            return args.ToJsonString();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return arguments;
+        }
+    }
+
+    private static List<string> ExtractJsonObjects(string content)
+    {
+        var objects = new List<string>();
+        var depth = 0;
+        var start = -1;
+        var inString = false;
+        var escaped = false;
+
+        for (var index = 0; index < content.Length; index++)
+        {
+            var character = content[index];
+
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (character == '\\')
+                {
+                    escaped = true;
+                }
+                else if (character == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (character == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (character == '{')
+            {
+                if (depth == 0)
+                {
+                    start = index;
+                }
+
+                depth++;
+                continue;
+            }
+
+            if (character != '}' || depth == 0)
+            {
+                continue;
+            }
+
+            depth--;
+            if (depth == 0 && start >= 0)
+            {
+                objects.Add(content.Substring(start, index - start + 1));
+                start = -1;
+            }
+        }
+
+        return objects;
+    }
+
+    private static string RemoveJsonComments(string json)
+    {
+        var result = new System.Text.StringBuilder(json.Length);
+        var inString = false;
+        var escaped = false;
+
+        for (var index = 0; index < json.Length; index++)
+        {
+            var character = json[index];
+
+            if (inString)
+            {
+                result.Append(character);
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (character == '\\')
+                {
+                    escaped = true;
+                }
+                else if (character == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (character == '"')
+            {
+                inString = true;
+                result.Append(character);
+                continue;
+            }
+
+            if (character == '/' && index + 1 < json.Length && json[index + 1] == '/')
+            {
+                while (index < json.Length && json[index] != '\n' && json[index] != '\r')
+                {
+                    index++;
+                }
+
+                if (index < json.Length)
+                {
+                    result.Append(json[index]);
+                }
+
+                continue;
+            }
+
+            result.Append(character);
+        }
+
+        return result.ToString();
+    }
+
+    private static IReadOnlyList<object> BuildOllamaMessages(IReadOnlyList<ProviderMessage> messages)
+    {
+        return messages.Select(message =>
+        {
+            var item = new Dictionary<string, object?>
+            {
+                ["role"] = message.Role,
+                ["content"] = message.Content
+            };
+
+            if (!string.IsNullOrWhiteSpace(message.ToolCallId))
+            {
+                item["tool_call_id"] = message.ToolCallId;
+            }
+
+            if (message.ToolCalls?.Count > 0)
+            {
+                item["tool_calls"] = message.ToolCalls.Select(call => new
+                {
+                    id = call.Id,
+                    type = call.Type,
+                    function = new
+                    {
+                        name = call.Function.Name,
+                        arguments = ParseArgumentsForOllama(call.Function.Arguments)
+                    }
+                }).ToList();
+            }
+
+            return item;
+        }).ToList();
+    }
+
+    private static object ParseArgumentsForOllama(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+            return new Dictionary<string, object?>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(arguments)
+                ?? new Dictionary<string, object?>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, object?>
+            {
+                ["rawArguments"] = arguments
+            };
+        }
+    }
+
+    private static bool ShouldOfferTools(string question)
+    {
+        return Regex.IsMatch(
+            question,
+            @"\b(create|add|build|make|generate|insert|new|update|edit|configure|set|use)\b.*\b(table|field|column|page|component|form|formblock|block|view)\b|\b(table|field|column|page|component|form|formblock|block|view)\b.*\b(create|add|build|make|generate|insert|new|update|edit|configure|set|use)\b",
+            RegexOptions.IgnoreCase);
+    }
+
+    private static string BuildFallbackToolAnswer(IReadOnlyList<AiToolExecution> toolExecutions)
+    {
+        if (toolExecutions.Count == 0)
+            return "Done.";
+
+        return string.Join("\n", toolExecutions.Select(result =>
+            result.Success ? result.Message : $"Tool failed: {result.Message}"));
     }
 
     private static string NormalizeProvider(string? value)
@@ -407,8 +841,71 @@ public class AiChatService
 
 public record AiSettingsUpdate(string? Provider, string? Model, string? BaseUrl, string? ApiKey);
 public record AiChatMessage(string Role, string Content);
-public record ProviderMessage(string Role, string Content);
 public record DocumentationChunk(string Source, string Heading, string Text);
+
+public class ProviderMessage
+{
+    public ProviderMessage(string role, string content)
+    {
+        Role = role;
+        Content = content;
+    }
+
+    [JsonPropertyName("role")]
+    public string Role { get; set; }
+
+    [JsonPropertyName("content")]
+    public string Content { get; set; }
+
+    [JsonPropertyName("tool_calls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<ProviderToolCall>? ToolCalls { get; set; }
+
+    [JsonPropertyName("tool_call_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolCallId { get; set; }
+
+    public static ProviderMessage ToolResult(string toolCallId, string content)
+    {
+        return new ProviderMessage("tool", content)
+        {
+            ToolCallId = toolCallId
+        };
+    }
+}
+
+public class ProviderChatResponse
+{
+    public ProviderChatResponse(string? content, List<ProviderToolCall> toolCalls)
+    {
+        Content = content;
+        ToolCalls = toolCalls;
+    }
+
+    public string? Content { get; set; }
+    public List<ProviderToolCall> ToolCalls { get; set; }
+}
+
+public class ProviderToolCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "function";
+
+    [JsonPropertyName("function")]
+    public ProviderToolFunction Function { get; set; } = new();
+}
+
+public class ProviderToolFunction
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("arguments")]
+    public string Arguments { get; set; } = "{}";
+}
 
 public class AiChatRequest
 {
@@ -423,6 +920,7 @@ public class AiChatResult
     public string Language { get; set; } = "en";
     public string Provider { get; set; } = "ollama";
     public string Model { get; set; } = "";
+    public List<AiToolExecution> Tools { get; set; } = new();
     public List<AiChatSource> Sources { get; set; } = new();
 }
 

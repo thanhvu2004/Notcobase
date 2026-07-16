@@ -44,7 +44,7 @@ public class AiController : ControllerBase
     {
         try
         {
-            return Ok(await _aiChatService.ChatAsync(request));
+            return Ok(await _aiChatService.ChatAsync(request, User));
         }
         catch (InvalidOperationException ex)
         {

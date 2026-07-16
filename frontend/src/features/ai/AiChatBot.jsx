@@ -58,6 +58,8 @@ const defaultProviderConfig = {
   hasApiKey: false,
 }
 
+const AI_CHAT_STATE_STORAGE_KEY = 'notcobase:ai-chat-state'
+
 const providerDefaults = {
   ollama: defaultProviderConfig,
   'openai-compatible': {
@@ -92,13 +94,48 @@ function createWelcomeMessage(language) {
   }
 }
 
+function loadChatState(language) {
+  try {
+    const stored = sessionStorage.getItem(AI_CHAT_STATE_STORAGE_KEY)
+    if (!stored) {
+      return {
+        open: false,
+        messages: [createWelcomeMessage(language)],
+      }
+    }
+
+    const parsed = JSON.parse(stored)
+    const messages = Array.isArray(parsed.messages)
+      ? parsed.messages.filter((message) => message?.role && typeof message.content === 'string')
+      : []
+
+    return {
+      open: Boolean(parsed.open),
+      messages: messages.length > 0 ? messages : [createWelcomeMessage(language)],
+    }
+  } catch {
+    return {
+      open: false,
+      messages: [createWelcomeMessage(language)],
+    }
+  }
+}
+
+function saveChatState(open, messages) {
+  sessionStorage.setItem(AI_CHAT_STATE_STORAGE_KEY, JSON.stringify({ open, messages }))
+}
+
+function hasSuccessfulToolAction(response) {
+  return Array.isArray(response?.tools) && response.tools.some((tool) => tool?.success)
+}
+
 export default function AiChatBot({ canConfigureAi = false }) {
   const language = getChatLanguage()
   const copy = getCopy(language)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => loadChatState(language).open)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [providerConfig, setProviderConfig] = useState(defaultProviderConfig)
-  const [messages, setMessages] = useState(() => [createWelcomeMessage(language)])
+  const [messages, setMessages] = useState(() => loadChatState(language).messages)
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -111,6 +148,10 @@ export default function AiChatBot({ canConfigureAi = false }) {
     queueMicrotask(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     })
+  }, [messages, open])
+
+  useEffect(() => {
+    saveChatState(open, messages)
   }, [messages, open])
 
   useEffect(() => {
@@ -197,14 +238,18 @@ export default function AiChatBot({ canConfigureAi = false }) {
         nextMessages.filter((message) => !message.welcome),
         language,
       )
-      setMessages((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          content: response.answer,
-          sources: response.sources || [],
-        },
-      ])
+      const assistantMessage = {
+        role: 'assistant',
+        content: response.answer,
+        sources: response.sources || [],
+      }
+      const completedMessages = [...nextMessages, assistantMessage]
+      setMessages(completedMessages)
+
+      if (hasSuccessfulToolAction(response)) {
+        saveChatState(true, completedMessages)
+        window.setTimeout(() => window.location.reload(), 250)
+      }
     } catch (err) {
       setError(err.message)
       setMessages((current) => [

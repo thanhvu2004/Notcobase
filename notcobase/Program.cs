@@ -25,6 +25,7 @@ builder.Services.AddScoped<notcobase.Services.DatabaseSeeder>();
 builder.Services.AddScoped<notcobase.Services.DynamicTableService>();
 builder.Services.AddScoped<notcobase.Services.SchemaMetadataSyncService>();
 builder.Services.AddScoped<notcobase.Services.AiChatService>();
+builder.Services.AddScoped<notcobase.Services.AiAppToolService>();
 
 // CORS
 builder.Services.AddCors(options =>
