@@ -226,7 +226,7 @@ label {
   border-bottom: 1px solid #e2e8f0;
   background: #f8fafc;
   padding: 0.75rem;
-  min-height: 10rem;
+  height: fit-content;
   z-index: 5;
 }
 

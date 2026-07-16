@@ -30,7 +30,18 @@ export async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = await response.text()
+    const contentType = response.headers.get('Content-Type') || ''
+    const body = await response.text()
+    const payload = contentType.includes('application/json')
+      ? (() => {
+          try {
+            return JSON.parse(body || '{}')
+          } catch {
+            return null
+          }
+        })()
+      : null
+    const message = payload?.error || payload?.message || body
     const error = new Error(message || `Request failed with status ${response.status}`)
     error.status = response.status
     throw error

@@ -20,4 +20,8 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="7.0.20" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="../ai/docs/**/*.md" CopyToOutputDirectory="PreserveNewest" Link="ai/docs/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

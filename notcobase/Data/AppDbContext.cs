@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<LowCodePage> LowCodePages { get; set; }
     public DbSet<ComponentDefinition> ComponentDefinitions { get; set; }
     public DbSet<BlockTemplate> BlockTemplates { get; set; }
+    public DbSet<AiSettings> AiSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -119,5 +120,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<BlockTemplate>()
             .HasIndex(t => new { t.Name, t.Type })
             .IsUnique();
+
+        modelBuilder.Entity<AiSettings>()
+            .Property(s => s.Provider)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AiSettings>()
+            .Property(s => s.Model)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<AiSettings>()
+            .Property(s => s.BaseUrl)
+            .HasMaxLength(1024);
     }
 }

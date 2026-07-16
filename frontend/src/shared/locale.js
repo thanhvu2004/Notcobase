@@ -107,7 +107,7 @@ const messages = {
         relatedRecordMode: 'Related record mode',
         parentLinkFieldOnTargetTable: 'Parent link field on target table',
         displayDefaultsTargetRecordId: 'Display currently defaults to the target record ID.',
-            table: 'Table',
+        table: 'Table',
         save: 'Save',
         close: 'Close',
         remove: 'Remove',

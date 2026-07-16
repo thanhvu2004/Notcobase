@@ -54,6 +54,7 @@ public class DatabaseSeeder
             "records.create",
             "records.edit",
             "records.delete",
+            "ai.configure",
             "pages.view",
             "pages.editor",
         };
@@ -196,6 +197,17 @@ public class DatabaseSeeder
                     Type TEXT NOT NULL,
                     SchemaJson TEXT NOT NULL,
                     CreatedAt TEXT NOT NULL
+                );
+                """);
+
+            await ExecuteCommandAsync(connection, """
+                CREATE TABLE IF NOT EXISTS AiSettings (
+                    Id INTEGER NOT NULL CONSTRAINT PK_AiSettings PRIMARY KEY AUTOINCREMENT,
+                    Provider TEXT NOT NULL,
+                    Model TEXT NOT NULL,
+                    BaseUrl TEXT NOT NULL,
+                    ApiKey TEXT NULL,
+                    UpdatedAt TEXT NOT NULL
                 );
                 """);
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { sendAiChatMessage } from './aiChatApi'
+import { getAiSettings, sendAiChatMessage, updateAiSettings } from './aiChatApi'
 import { getLanguage } from '../../shared/locale'
+
 
 const copyByLanguage = {
   en: {
@@ -8,11 +9,14 @@ const copyByLanguage = {
     close: 'Close AI chat',
     open: 'Open AI chat',
     settings: 'Settings',
+    saveSettings: 'Save settings',
+    settingsSaved: 'AI settings saved.',
     provider: 'Provider',
     model: 'Model',
     providerUrl: 'Provider URL',
     apiKey: 'API key',
-    apiKeyPlaceholder: 'Required for API-key providers',
+    apiKeyPlaceholder: 'Leave blank to keep saved key',
+    savedApiKey: 'API key saved in backend',
     ollamaProvider: 'Ollama (local)',
     openAiCompatibleProvider: 'OpenAI-compatible API',
     geminiProvider: 'Gemini API',
@@ -27,11 +31,14 @@ const copyByLanguage = {
     close: 'Đóng chat AI',
     open: 'Mở chat AI',
     settings: 'Cài đặt',
+    saveSettings: 'Lưu cài đặt',
+    settingsSaved: 'Đã lưu cài đặt AI.',
     provider: 'Nhà cung cấp',
     model: 'Model',
     providerUrl: 'URL nhà cung cấp',
     apiKey: 'API key',
-    apiKeyPlaceholder: 'Bắt buộc với nhà cung cấp dùng API key',
+    apiKeyPlaceholder: 'Để trống để giữ key đã lưu',
+    savedApiKey: 'API key đã lưu trong backend',
     ollamaProvider: 'Ollama (cục bộ)',
     openAiCompatibleProvider: 'API tương thích OpenAI',
     geminiProvider: 'Gemini API',
@@ -43,13 +50,12 @@ const copyByLanguage = {
   },
 }
 
-const AI_PROVIDER_STORAGE_KEY = 'notcobase:ai-provider-config'
-
 const defaultProviderConfig = {
   provider: 'ollama',
   model: 'llama3.1:8b',
   baseUrl: 'http://127.0.0.1:11434',
   apiKey: '',
+  hasApiKey: false,
 }
 
 const providerDefaults = {
@@ -59,12 +65,14 @@ const providerDefaults = {
     model: 'gpt-4o-mini',
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
+    hasApiKey: false,
   },
   gemini: {
     provider: 'gemini',
     model: 'gemini-2.0-flash',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     apiKey: '',
+    hasApiKey: false,
   },
 }
 
@@ -84,24 +92,17 @@ function createWelcomeMessage(language) {
   }
 }
 
-function loadProviderConfig() {
-  try {
-    const stored = localStorage.getItem(AI_PROVIDER_STORAGE_KEY)
-    return stored ? { ...defaultProviderConfig, ...JSON.parse(stored) } : defaultProviderConfig
-  } catch {
-    return defaultProviderConfig
-  }
-}
-
-export default function AiChatBot() {
+export default function AiChatBot({ canConfigureAi = false }) {
   const language = getChatLanguage()
   const copy = getCopy(language)
   const [open, setOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [providerConfig, setProviderConfig] = useState(loadProviderConfig)
+  const [providerConfig, setProviderConfig] = useState(defaultProviderConfig)
   const [messages, setMessages] = useState(() => [createWelcomeMessage(language)])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [settingsMessage, setSettingsMessage] = useState('')
   const [error, setError] = useState('')
   const scrollRef = useRef(null)
 
@@ -113,8 +114,31 @@ export default function AiChatBot() {
   }, [messages, open])
 
   useEffect(() => {
-    localStorage.setItem(AI_PROVIDER_STORAGE_KEY, JSON.stringify(providerConfig))
-  }, [providerConfig])
+    if (!canConfigureAi) return undefined
+
+    let cancelled = false
+    getAiSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setProviderConfig({ ...defaultProviderConfig, ...settings, apiKey: '' })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSettingsMessage('')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [canConfigureAi])
+
+  useEffect(() => {
+    if (!canConfigureAi && settingsOpen) {
+      setSettingsOpen(false)
+    }
+  }, [canConfigureAi, settingsOpen])
 
   function patchProviderConfig(patch) {
     setProviderConfig((current) => {
@@ -123,13 +147,37 @@ export default function AiChatBot() {
         return { ...providerDefaults.ollama }
       }
       if (patch.provider === 'openai-compatible') {
-        return { ...providerDefaults['openai-compatible'], apiKey: current.apiKey || '' }
+        return { ...providerDefaults['openai-compatible'], apiKey: '', hasApiKey: current.hasApiKey || false }
       }
       if (patch.provider === 'gemini') {
-        return { ...providerDefaults.gemini, apiKey: current.apiKey || '' }
+        return { ...providerDefaults.gemini, apiKey: '', hasApiKey: current.hasApiKey || false }
       }
       return next
     })
+  }
+
+  async function handleSaveSettings() {
+    setSettingsLoading(true)
+    setError('')
+    setSettingsMessage('')
+
+    try {
+      const payload = {
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        baseUrl: providerConfig.baseUrl,
+      }
+      if (providerConfig.apiKey) {
+        payload.apiKey = providerConfig.apiKey
+      }
+      const saved = await updateAiSettings(payload)
+      setProviderConfig({ ...defaultProviderConfig, ...saved, apiKey: '' })
+      setSettingsMessage(copy.settingsSaved)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSettingsLoading(false)
+    }
   }
 
   async function handleSubmit(event) {
@@ -148,7 +196,6 @@ export default function AiChatBot() {
         text,
         nextMessages.filter((message) => !message.welcome),
         language,
-        providerConfig,
       )
       setMessages((current) => [
         ...current,
@@ -182,9 +229,11 @@ export default function AiChatBot() {
               <span>{copy.subtitle} · {providerConfig.model}</span>
             </div>
             <div className="ai-chat-header-actions">
-              <button type="button" className="secondary" onClick={() => setSettingsOpen((current) => !current)}>
-                {copy.settings}
-              </button>
+              {canConfigureAi && (
+                <button type="button" className="secondary" onClick={() => setSettingsOpen((current) => !current)}>
+                  {copy.settings}
+                </button>
+              )}
               <button type="button" className="secondary ai-chat-close" onClick={() => setOpen(false)} aria-label={copy.close}>
                 x
               </button>
@@ -218,8 +267,13 @@ export default function AiChatBot() {
                     placeholder={copy.apiKeyPlaceholder}
                     onChange={(event) => patchProviderConfig({ apiKey: event.target.value })}
                   />
+                  {providerConfig.hasApiKey && <span>{copy.savedApiKey}</span>}
                 </label>
               )}
+              <button type="button" className="secondary" disabled={settingsLoading} onClick={handleSaveSettings}>
+                {copy.saveSettings}
+              </button>
+              {settingsMessage && <span>{settingsMessage}</span>}
             </section>
           )}
 

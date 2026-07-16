@@ -652,7 +652,7 @@ export default function App() {
           </section>
         </main>
       )}
-      <AiChatBot />
+      <AiChatBot canConfigureAi={can('ai.configure')} />
     </div>
   )
 }
