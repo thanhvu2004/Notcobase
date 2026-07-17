@@ -727,6 +727,10 @@ label {
   color: #991b1b;
   margin-bottom: 1rem;
   padding: 0.75rem 1rem;
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
 }
 
 .empty-state {

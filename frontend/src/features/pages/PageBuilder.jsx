@@ -378,7 +378,12 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
 
   return (
     <main className={editorMode ? 'page-builder-shell editor' : 'page-builder-shell'}>
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button onClick={() => setError(null)}>×</button>
+        </div>
+      )}
       {editorMode && (
         <aside className="page-builder-sidebar">
           <section className="panel">
