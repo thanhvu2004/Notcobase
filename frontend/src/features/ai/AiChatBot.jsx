@@ -21,6 +21,7 @@ const copyByLanguage = {
     openAiCompatibleProvider: 'OpenAI-compatible API',
     geminiProvider: 'Gemini API',
     placeholder: 'Ask how to use Notcobase...',
+    delete: 'Delete chat',
     send: 'Send',
     thinking: 'Thinking...',
     unavailable: 'I could not reach the local AI service.',
@@ -43,6 +44,7 @@ const copyByLanguage = {
     openAiCompatibleProvider: 'API tương thích OpenAI',
     geminiProvider: 'Gemini API',
     placeholder: 'Hỏi cách sử dụng Notcobase...',
+    delete: 'Xóa chat',
     send: 'Gửi',
     thinking: 'Đang suy nghĩ...',
     unavailable: 'Tôi không kết nối được dịch vụ AI cục bộ.',
@@ -123,6 +125,11 @@ function loadChatState(language) {
 
 function saveChatState(open, messages) {
   sessionStorage.setItem(AI_CHAT_STATE_STORAGE_KEY, JSON.stringify({ open, messages }))
+}
+
+function deleteChat() {
+  sessionStorage.removeItem(AI_CHAT_STATE_STORAGE_KEY)
+  window.location.reload()
 }
 
 function hasSuccessfulToolAction(response) {
@@ -359,9 +366,15 @@ export default function AiChatBot({ canConfigureAi = false }) {
                 }
               }}
             />
-            <button type="submit" disabled={loading || !draft.trim()}>
-              {copy.send}
-            </button>
+            <div className="ai-chat-form-actions">
+              <button type="button" className="secondary" onClick={() => deleteChat()}>
+                {copy.delete}
+              </button>
+              <button type="submit" disabled={loading || !draft.trim()}>
+                {copy.send}
+              </button>
+            </div>
+
           </form>
         </section>
       )}

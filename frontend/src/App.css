@@ -321,6 +321,18 @@ label {
   resize: vertical;
 }
 
+.ai-chat-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-direction: column;
+}
+
+.ai-chat-form-actions button {
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+}
+
 .ai-chat-form button {
   align-self: end;
   height: 2.5rem;
