@@ -381,7 +381,9 @@ export default function PageBuilder({ pageId, pages = [], editorMode, can = () =
       {error && (
         <div className="error-banner">
           <span>{error}</span>
-          <button onClick={() => setError(null)}>×</button>
+          <button onClick={() => setError(null)} style={{ border: 'solid red 1px', background: 'none', cursor: 'pointer', borderRadius: '50%' }}>
+            ×
+          </button>
         </div>
       )}
       {editorMode && (
