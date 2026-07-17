@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json;
@@ -426,7 +428,9 @@ public class AiChatService
             "tables, fields, records, users, roles, permissions, custom pages, and the UI editor. " +
             "Answer with concise, practical steps. Mention required permissions when relevant. " +
             "When the user asks you to create or configure tables, fields, pages, or page components, use the available tools. " +
+            "Vietnamese requests like tao trang, them component, chen block, dung bang, su dung bang, cau hinh form, cap nhat page, or sua component are tool requests too. " +
             "Never print JSON function calls for the user to run, never explain that you will use a function, and never include comments inside function JSON; call the available tools directly. " +
+            "Always use the exact English tool names and exact English argument names from the tool schema, even when the user writes in Vietnamese. " +
             "For page component requests, use the page name or slug provided by the user as pageName; do not ask for a page ID when a page name was given. " +
             "When the user asks to set a FormBlock or TableBlock to use a table by name, call configure_page_component with targetComponent and tableName. " +
             "Only call tools when the request is explicit enough to act. If a required ID or name is missing, ask a concise follow-up question. " +
@@ -779,10 +783,39 @@ public class AiChatService
 
     private static bool ShouldOfferTools(string question)
     {
-        return Regex.IsMatch(
-            question,
-            @"\b(create|add|build|make|generate|insert|new|update|edit|configure|set|use)\b.*\b(table|field|column|page|component|form|formblock|block|view)\b|\b(table|field|column|page|component|form|formblock|block|view)\b.*\b(create|add|build|make|generate|insert|new|update|edit|configure|set|use)\b",
-            RegexOptions.IgnoreCase);
+        var normalized = RemoveDiacritics(question).ToLowerInvariant();
+        string[] actionTerms =
+        {
+            "create", "add", "build", "make", "generate", "insert", "new", "update", "edit", "configure", "set", "use",
+            "tao", "them", "chen", "moi", "cap nhat", "sua", "chinh sua", "cau hinh", "dat", "dung", "su dung", "gan"
+        };
+        string[] objectTerms =
+        {
+            "table", "field", "column", "page", "component", "form", "formblock", "block", "view",
+            "bang", "truong", "cot", "trang", "thanh phan", "bieu mau", "form", "khoi", "giao dien"
+        };
+
+        return ContainsAnyTerm(normalized, actionTerms) && ContainsAnyTerm(normalized, objectTerms);
+    }
+
+    private static bool ContainsAnyTerm(string text, IEnumerable<string> terms)
+    {
+        return terms.Any(term => Regex.IsMatch(text, $@"(^|[^\p{{L}}\p{{N}}]){Regex.Escape(term)}($|[^\p{{L}}\p{{N}}])"));
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        var normalized = text.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC).Replace('đ', 'd').Replace('Đ', 'D');
     }
 
     private static string BuildFallbackToolAnswer(IReadOnlyList<AiToolExecution> toolExecutions)

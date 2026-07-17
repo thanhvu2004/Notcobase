@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -154,7 +156,7 @@ public class AiAppToolService
     private async Task<AiToolExecution> CreateTableAsync(JsonObject args, ClaimsPrincipal user)
     {
         Require(user, "tables.create");
-        var name = GetRequiredString(args, "name");
+        var name = GetRequiredString(args, "name", "ten", "tên", "tenBang", "tênBảng");
         var inheritProperties = GetBool(args, "inheritProperties") ?? false;
         var parentTableId = GetInt(args, "parentTableId");
 
@@ -195,8 +197,8 @@ public class AiAppToolService
         if (table == null)
             throw new InvalidOperationException("Table not found.");
 
-        var name = GetRequiredString(args, "name");
-        var fieldType = GetRequiredString(args, "fieldType");
+        var name = GetRequiredString(args, "name", "ten", "tên", "tenCot", "tênCột");
+        var fieldType = GetRequiredString(args, "fieldType", "type", "kieu", "kiểu", "loai", "loại", "kieuDuLieu");
         var tableMap = await _context.Tables
             .Include(t => t.Columns)
             .AsNoTracking()
@@ -244,7 +246,7 @@ public class AiAppToolService
     private async Task<AiToolExecution> CreatePageAsync(JsonObject args, ClaimsPrincipal user)
     {
         Require(user, "pages.editor");
-        var name = GetRequiredString(args, "name");
+        var name = GetRequiredString(args, "name", "ten", "tên", "tenTrang", "tênTrang");
         var page = new LowCodePage
         {
             Name = name,
@@ -327,7 +329,7 @@ public class AiAppToolService
         MergePropsInto(targetProps, args["props"] as JsonObject);
 
         var tableId = GetInt(args, "tableId");
-        var tableName = GetString(args, "tableName");
+        var tableName = GetTableName(args);
         Table? table = null;
         if (tableId.HasValue || !string.IsNullOrWhiteSpace(tableName))
         {
@@ -448,17 +450,22 @@ public class AiAppToolService
 
     private static string? GetPageName(JsonObject args)
     {
-        return GetFirstString(args, "pageName", "page", "pageTitle", "pageSlug");
+        return GetFirstString(args, "pageName", "page", "pageTitle", "pageSlug", "tenTrang", "tênTrang", "trang", "slugTrang");
     }
 
     private static string? GetParentReference(JsonObject args)
     {
-        return GetFirstString(args, "parentNodeId", "parentComponent", "parentComponentType", "parentName", "parentTitle", "parent");
+        return GetFirstString(args, "parentNodeId", "parentComponent", "parentComponentType", "parentName", "parentTitle", "parent", "thanhPhanCha", "componentCha", "benTrong", "bênTrong");
     }
 
     private static string? GetTargetReference(JsonObject args)
     {
-        return GetFirstString(args, "targetNodeId", "targetComponent", "component", "targetName", "targetTitle", "nodeId", "nodeName");
+        return GetFirstString(args, "targetNodeId", "targetComponent", "component", "targetName", "targetTitle", "nodeId", "nodeName", "thanhPhan", "componentDich", "doiTuong", "đốiTượng");
+    }
+
+    private static string? GetTableName(JsonObject args)
+    {
+        return GetFirstString(args, "tableName", "table", "tenBang", "tênBảng", "bang", "bảng");
     }
 
     private static object BuildTool(string name, string description, object parameters)
@@ -854,13 +861,28 @@ public class AiAppToolService
 
         var normalizedComponent = NormalizeReference(component);
         return normalizedComponent == normalizedReference
-            || (component.Equals("FormBlock", StringComparison.OrdinalIgnoreCase) && normalizedReference == "form")
-            || (component.Equals("TableBlock", StringComparison.OrdinalIgnoreCase) && normalizedReference == "table");
+            || (component.Equals("FormBlock", StringComparison.OrdinalIgnoreCase) && (normalizedReference == "form" || normalizedReference == "bieumau" || normalizedReference == "maubieu"))
+            || (component.Equals("TableBlock", StringComparison.OrdinalIgnoreCase) && (normalizedReference == "table" || normalizedReference == "bang"));
     }
 
     private static string NormalizeReference(string value)
     {
-        return Regex.Replace(value.Trim().ToLowerInvariant(), "[^a-z0-9]+", "");
+        return Regex.Replace(RemoveDiacritics(value).Trim().ToLowerInvariant(), "[^a-z0-9]+", "");
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        var normalized = text.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC).Replace('đ', 'd').Replace('Đ', 'D');
     }
 
     private static string? GetNodeString(JsonNode? value)
@@ -985,11 +1007,11 @@ public class AiAppToolService
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
-    private static string GetRequiredString(JsonObject args, string name)
+    private static string GetRequiredString(JsonObject args, params string[] names)
     {
-        var value = GetString(args, name);
+        var value = GetFirstString(args, names);
         return string.IsNullOrWhiteSpace(value)
-            ? throw new InvalidOperationException($"{name} is required.")
+            ? throw new InvalidOperationException($"{names[0]} is required.")
             : value.Trim();
     }
 
