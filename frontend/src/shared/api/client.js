@@ -41,7 +41,11 @@ export async function api(path, options = {}) {
           }
         })()
       : null
-    const message = payload?.error || payload?.message || body
+    const message = payload?.error || payload?.message || (
+      response.status >= 500
+        ? 'The server is temporarily unavailable. Please try again in a few minutes.'
+        : body
+    )
     const error = new Error(message || `Request failed with status ${response.status}`)
     error.status = response.status
     throw error

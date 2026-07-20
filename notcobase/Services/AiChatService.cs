@@ -185,7 +185,7 @@ public class AiChatService
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Ollama returned HTTP {(int)response.StatusCode}: {body}");
+            ThrowProviderException("Ollama", response, body);
         }
 
         using var document = JsonDocument.Parse(body);
@@ -234,7 +234,7 @@ public class AiChatService
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"AI provider returned HTTP {(int)response.StatusCode}: {body}");
+            ThrowProviderException("AI provider", response, body);
         }
 
         using var document = JsonDocument.Parse(body);
@@ -294,7 +294,7 @@ public class AiChatService
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Gemini returned HTTP {(int)response.StatusCode}: {body}");
+            ThrowProviderException("Gemini", response, body);
         }
 
         using var document = JsonDocument.Parse(body);
@@ -340,6 +340,84 @@ public class AiChatService
             .ToList();
 
         return _documents;
+    }
+
+    private void ThrowProviderException(string providerName, HttpResponseMessage response, string body)
+    {
+        var statusCode = (int)response.StatusCode;
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+
+        _logger.LogWarning(
+            "{ProviderName} returned HTTP {StatusCode} ({ContentType}): {Body}",
+            providerName,
+            statusCode,
+            contentType,
+            TruncateForLog(body));
+
+        var message = statusCode >= 500
+            ? "The AI provider is temporarily unavailable. Please try again in a few minutes."
+            : BuildProviderClientErrorMessage(providerName, statusCode, contentType, body);
+
+        throw new AiProviderException(message, statusCode >= 500 ? 502 : 400);
+    }
+
+    private static string BuildProviderClientErrorMessage(string providerName, int statusCode, string contentType, string body)
+    {
+        if (contentType.Contains("json", StringComparison.OrdinalIgnoreCase))
+        {
+            var providerMessage = TryReadProviderErrorMessage(body);
+            if (!string.IsNullOrWhiteSpace(providerMessage))
+            {
+                return $"{providerName} rejected the request: {providerMessage}";
+            }
+        }
+
+        return $"{providerName} rejected the request with HTTP {statusCode}.";
+    }
+
+    private static string? TryReadProviderErrorMessage(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.String)
+                {
+                    return error.GetString();
+                }
+
+                if (error.ValueKind == JsonValueKind.Object &&
+                    error.TryGetProperty("message", out var errorMessage) &&
+                    errorMessage.ValueKind == JsonValueKind.String)
+                {
+                    return errorMessage.GetString();
+                }
+            }
+
+            if (root.TryGetProperty("message", out var message) &&
+                message.ValueKind == JsonValueKind.String)
+            {
+                return message.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string TruncateForLog(string value, int maxLength = 1000)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return value[..maxLength] + "...";
     }
 
     private static IEnumerable<DocumentationChunk> ChunkDocument(string docsPath, string path, string text, int maxChars = 1800)
@@ -961,4 +1039,15 @@ public class AiChatSource
 {
     public string Source { get; set; } = "";
     public string Heading { get; set; } = "";
+}
+
+public class AiProviderException : Exception
+{
+    public AiProviderException(string message, int statusCode)
+        : base(message)
+    {
+        StatusCode = statusCode;
+    }
+
+    public int StatusCode { get; }
 }

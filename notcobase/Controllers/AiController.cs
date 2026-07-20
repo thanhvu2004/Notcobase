@@ -50,9 +50,13 @@ public class AiController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (HttpRequestException ex)
+        catch (AiProviderException ex)
         {
-            return StatusCode(502, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(502, new { error = "The AI provider is temporarily unavailable. Please try again in a few minutes." });
         }
     }
 
